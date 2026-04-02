@@ -7,7 +7,7 @@ type LandingProps = {
 export default function LandingPage({ onAuthenticate }: LandingProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = event.currentTarget
     const formData = new FormData(form)
@@ -34,13 +34,42 @@ export default function LandingPage({ onAuthenticate }: LandingProps) {
         return
       }
 
-      onAuthenticate(nomeCompleto)
-      window.alert(`Registrado como ${nomeCompleto}`)
+      try {
+        const response = await fetch('http://localhost:4000/api/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ matricula, nomeCompleto, senha })
+        })
+        if (response.ok) {
+          onAuthenticate(nomeCompleto)
+          window.alert(`Registrado como ${nomeCompleto}`)
+        } else {
+          const error = await response.json()
+          window.alert(`Erro: ${error.error}`)
+        }
+      } catch (error) {
+        window.alert('Erro de conexão')
+      }
       return
     }
 
-    onAuthenticate(matricula)
-    window.alert(`Logado como ${matricula}`)
+    try {
+      const response = await fetch('http://localhost:4000/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matricula, senha })
+      })
+
+      if (response.ok) {
+        onAuthenticate(matricula)
+        window.alert(`Logado como ${matricula}`)
+      } else {
+        const error = await response.json()
+        window.alert(`Erro de login: ${error.error || 'Credenciais inválidas'}`)
+      }
+    } catch (error) {
+      window.alert('Erro de conexão ao tentar logar')
+    }
   }
 
   return (
