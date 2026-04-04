@@ -35,7 +35,7 @@ export default function LandingPage({ onAuthenticate }: LandingProps) {
       }
 
       try {
-        const response = await fetch('http://localhost:4000/api/register', {
+        const response = await fetch('http://localhost:4002/api/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ matricula, nomeCompleto, senha })
@@ -44,8 +44,13 @@ export default function LandingPage({ onAuthenticate }: LandingProps) {
           onAuthenticate(nomeCompleto)
           window.alert(`Registrado como ${nomeCompleto}`)
         } else {
-          const error = await response.json()
-          window.alert(`Erro: ${error.error}`)
+          const errorText = await response.text()
+          try {
+            const parsed = JSON.parse(errorText)
+            window.alert(`Erro: ${parsed.error || 'Falha ao registrar'}`)
+          } catch {
+            window.alert(`Erro: ${response.status} ${response.statusText}`)
+          }
         }
       } catch (error) {
         window.alert('Erro de conexão')
@@ -54,18 +59,26 @@ export default function LandingPage({ onAuthenticate }: LandingProps) {
     }
 
     try {
-      const response = await fetch('http://localhost:4000/api/login', {
+      const response = await fetch('http://localhost:4002/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ matricula, senha })
       })
 
       if (response.ok) {
-        onAuthenticate(matricula)
-        window.alert(`Logado como ${matricula}`)
+        const result = await response.json()
+        const displayName = String(result.displayName ?? matricula)
+        localStorage.setItem('userCredentials', JSON.stringify({ matricula, senha }))
+        onAuthenticate(displayName)
+        window.alert(`Logado como ${displayName}`)
       } else {
-        const error = await response.json()
-        window.alert(`Erro de login: ${error.error || 'Credenciais inválidas'}`)
+        const errorText = await response.text()
+        try {
+          const parsed = JSON.parse(errorText)
+          window.alert(`Erro de login: ${parsed.error || 'Credenciais inválidas'}`)
+        } catch {
+          window.alert(`Erro de login: ${response.status} ${response.statusText}`)
+        }
       }
     } catch (error) {
       window.alert('Erro de conexão ao tentar logar')
