@@ -13,23 +13,52 @@ type StoredDocument = {
   uploadedAt: string
 }
 
+type AppNotice = {
+  type: 'success' | 'error' | 'info'
+  message: string
+}
+
 function App() {
   const [currentUser, setCurrentUser] = useState<string | null>(null)
   const [status, setStatus] = useState('Ready to print')
-  const [uploadStatus, setUploadStatus] = useState('')
+  const [notice, setNotice] = useState<AppNotice | null>(null)
   const [uploadedFile, setUploadedFile] = useState<any>(null)
   const [showNameInput, setShowNameInput] = useState(false)
   const [documentName, setDocumentName] = useState('')
   const [documents, setDocuments] = useState<StoredDocument[]>([])
-  const [documentsStatus, setDocumentsStatus] = useState('')
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false)
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const noticeTimerRef = useRef<number | null>(null)
+
+  const showNotice = (message: string, type: AppNotice['type'] = 'info', autoHide = true) => {
+    setNotice({ message, type })
+
+    if (noticeTimerRef.current) {
+      window.clearTimeout(noticeTimerRef.current)
+      noticeTimerRef.current = null
+    }
+
+    if (autoHide) {
+      noticeTimerRef.current = window.setTimeout(() => {
+        setNotice(null)
+      }, 3800)
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) {
+        window.clearTimeout(noticeTimerRef.current)
+      }
+    }
+  }, [])
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
-    setUploadStatus('Uploading...')
+    showNotice('Enviando arquivo...', 'info', false)
 
     const formData = new FormData()
     formData.append('file', file)
@@ -44,18 +73,18 @@ function App() {
         const result = await response.json()
         setUploadedFile(result.file)
         setShowNameInput(true)
-        setUploadStatus(`File "${result.file.originalname}" uploaded. Enter a document name and save it.`)
+        showNotice(`Arquivo "${result.file.originalname}" enviado. Informe um nome e salve o documento.`, 'success')
       } else {
         const errorText = await response.text()
         try {
           const parsed = JSON.parse(errorText)
-          setUploadStatus(`Upload failed: ${parsed.error || 'Unknown error'}`)
+          showNotice(`Falha no upload: ${parsed.error || 'Erro desconhecido'}`, 'error')
         } catch {
-          setUploadStatus(`Upload failed: ${response.status} ${response.statusText}`)
+          showNotice(`Falha no upload: ${response.status} ${response.statusText}`, 'error')
         }
       }
     } catch (error) {
-      setUploadStatus('Upload failed: Network error')
+      showNotice('Falha no upload: erro de conexao', 'error')
     }
   }
 
@@ -71,7 +100,7 @@ function App() {
     }
 
     const { matricula, senha } = JSON.parse(rawCredentials)
-    setDocumentsStatus('Loading documents...')
+    setIsLoadingDocuments(true)
 
     try {
       const response = await fetch('http://localhost:4002/api/documents', {
@@ -81,8 +110,13 @@ function App() {
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        setDocumentsStatus(`Could not load documents: ${error.error}`)
+        const errorText = await response.text()
+        try {
+          const parsed = JSON.parse(errorText)
+          showNotice(`Nao foi possivel carregar documentos: ${parsed.error || 'Erro desconhecido'}`, 'error')
+        } catch {
+          showNotice(`Nao foi possivel carregar documentos: ${response.status} ${response.statusText}`, 'error')
+        }
         return
       }
 
@@ -93,9 +127,10 @@ function App() {
       })
 
       setDocuments(orderedList)
-      setDocumentsStatus('')
     } catch (error) {
-      setDocumentsStatus('Could not load documents: Network error')
+      showNotice('Nao foi possivel carregar documentos: erro de conexao', 'error')
+    } finally {
+      setIsLoadingDocuments(false)
     }
   }
 
@@ -110,12 +145,12 @@ function App() {
 
     const rawCredentials = localStorage.getItem('userCredentials')
     if (!rawCredentials) {
-      setUploadStatus('Missing login credentials. Please log in again.')
+      showNotice('Credenciais ausentes. Faca login novamente.', 'error')
       return
     }
 
     const { matricula, senha } = JSON.parse(rawCredentials)
-    setUploadStatus('Saving document...')
+    showNotice('Salvando documento...', 'info', false)
 
     try {
       const response = await fetch('http://localhost:4002/api/add-document', {
@@ -134,29 +169,35 @@ function App() {
       })
 
       if (response.ok) {
-        setUploadStatus(`Document "${documentName}" saved successfully.`)
+        showNotice(`Documento "${documentName}" salvo com sucesso.`, 'success')
         setDocumentName('')
         setUploadedFile(null)
         setShowNameInput(false)
-        fetchDocuments()
+        await fetchDocuments()
       } else {
-        const error = await response.json()
-        setUploadStatus(`Failed to save document: ${error.error}`)
+        const errorText = await response.text()
+        try {
+          const parsed = JSON.parse(errorText)
+          showNotice(`Falha ao salvar documento: ${parsed.error || 'Erro desconhecido'}`, 'error')
+        } catch {
+          showNotice(`Falha ao salvar documento: ${response.status} ${response.statusText}`, 'error')
+        }
       }
     } catch (error) {
-      setUploadStatus('Failed to save document: Network error')
+      showNotice('Falha ao salvar documento: erro de conexao', 'error')
     }
   }
 
   const handleDeleteDocument = async (documentId: string) => {
     const rawCredentials = localStorage.getItem('userCredentials')
     if (!rawCredentials) {
-      setDocumentsStatus('Missing login credentials. Please log in again.')
+      showNotice('Credenciais ausentes. Faca login novamente.', 'error')
       return
     }
 
     const { matricula, senha } = JSON.parse(rawCredentials)
     setDeletingDocumentId(documentId)
+    showNotice('Excluindo documento...', 'info', false)
 
     try {
       const response = await fetch('http://localhost:4002/api/delete-document', {
@@ -169,17 +210,17 @@ function App() {
         const errorText = await response.text()
         try {
           const parsed = JSON.parse(errorText)
-          setDocumentsStatus(`Could not delete document: ${parsed.error || 'Unknown error'}`)
+          showNotice(`Nao foi possivel excluir documento: ${parsed.error || 'Erro desconhecido'}`, 'error')
         } catch {
-          setDocumentsStatus(`Could not delete document: ${response.status} ${response.statusText}`)
+          showNotice(`Nao foi possivel excluir documento: ${response.status} ${response.statusText}`, 'error')
         }
         return
       }
 
-      setDocumentsStatus('Document deleted successfully.')
+      showNotice('Documento excluido com sucesso.', 'success')
       await fetchDocuments()
     } catch (error) {
-      setDocumentsStatus('Could not delete document: Network error')
+      showNotice('Nao foi possivel excluir documento: erro de conexao', 'error')
     } finally {
       setDeletingDocumentId(null)
     }
@@ -196,6 +237,10 @@ function App() {
         <p>Welcome, {currentUser}. Your lightweight print management dashboard</p>
       </header>
 
+      <div className="dashboard-notice-slot" aria-live="polite">
+        {notice && <div className={`inline-notice dashboard-notice notice-${notice.type}`}>{notice.message}</div>}
+      </div>
+
       <section className="card">
         <h2>Dashboard</h2>
         <p>Status: {status}</p>
@@ -211,7 +256,6 @@ function App() {
             onChange={handleFileSelect}
             style={{ display: 'none' }}
           />
-          {uploadStatus && <p style={{ marginTop: 8 }}>{uploadStatus}</p>}
 
           {showNameInput && (
             <div style={{ marginTop: 12 }}>
@@ -253,10 +297,10 @@ function App() {
 
           <section className="card" style={{ marginTop: 16 }}>
             <h2>Uploaded Documents</h2>
-            {documentsStatus && <p>{documentsStatus}</p>}
-            {!documentsStatus && documents.length === 0 && <p>No documents uploaded yet.</p>}
+            {isLoadingDocuments && <p>Loading documents...</p>}
+            {!isLoadingDocuments && documents.length === 0 && <p>No documents uploaded yet.</p>}
 
-            {documents.length > 0 && (
+            {!isLoadingDocuments && documents.length > 0 && (
               <ul style={{ listStyle: 'none', padding: 0 }}>
                 {documents.map((document) => {
                   const fileUrl = `http://localhost:4002${document.url}`

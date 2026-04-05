@@ -1,11 +1,41 @@
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 
 type LandingProps = {
   onAuthenticate: (userName: string) => void
 }
 
+type Notice = {
+  type: 'success' | 'error' | 'info'
+  message: string
+}
+
 export default function LandingPage({ onAuthenticate }: LandingProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [notice, setNotice] = useState<Notice | null>(null)
+  const noticeTimerRef = useRef<number | null>(null)
+
+  const showNotice = (message: string, type: Notice['type'] = 'info', autoHide = true) => {
+    setNotice({ message, type })
+
+    if (noticeTimerRef.current) {
+      window.clearTimeout(noticeTimerRef.current)
+      noticeTimerRef.current = null
+    }
+
+    if (autoHide) {
+      noticeTimerRef.current = window.setTimeout(() => {
+        setNotice(null)
+      }, 3800)
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) {
+        window.clearTimeout(noticeTimerRef.current)
+      }
+    }
+  }, [])
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -16,7 +46,7 @@ export default function LandingPage({ onAuthenticate }: LandingProps) {
     const senha = String(formData.get('senha') ?? '').trim()
 
     if (!matricula || !senha) {
-      window.alert('Por favor preencha Matrícula e Senha.')
+      showNotice('Por favor preencha Matricula e Senha.', 'error')
       return
     }
 
@@ -25,12 +55,12 @@ export default function LandingPage({ onAuthenticate }: LandingProps) {
       const confirmeSenha = String(formData.get('confirmeSenha') ?? '').trim()
 
       if (!nomeCompleto || !confirmeSenha) {
-        window.alert('Por favor preencha Nome Completo e Confirme sua senha.')
+        showNotice('Por favor preencha Nome Completo e Confirme sua senha.', 'error')
         return
       }
 
       if (senha !== confirmeSenha) {
-        window.alert('Senha e Confirme sua senha devem ser iguais.')
+        showNotice('Senha e Confirme sua senha devem ser iguais.', 'error')
         return
       }
 
@@ -41,19 +71,19 @@ export default function LandingPage({ onAuthenticate }: LandingProps) {
           body: JSON.stringify({ matricula, nomeCompleto, senha })
         })
         if (response.ok) {
-          onAuthenticate(nomeCompleto)
-          window.alert(`Registrado como ${nomeCompleto}`)
+          showNotice(`Registrado como ${nomeCompleto}`, 'success', false)
+          window.setTimeout(() => onAuthenticate(nomeCompleto), 520)
         } else {
           const errorText = await response.text()
           try {
             const parsed = JSON.parse(errorText)
-            window.alert(`Erro: ${parsed.error || 'Falha ao registrar'}`)
+            showNotice(`Erro: ${parsed.error || 'Falha ao registrar'}`, 'error')
           } catch {
-            window.alert(`Erro: ${response.status} ${response.statusText}`)
+            showNotice(`Erro: ${response.status} ${response.statusText}`, 'error')
           }
         }
       } catch (error) {
-        window.alert('Erro de conexão')
+        showNotice('Erro de conexao', 'error')
       }
       return
     }
@@ -69,68 +99,128 @@ export default function LandingPage({ onAuthenticate }: LandingProps) {
         const result = await response.json()
         const displayName = String(result.displayName ?? matricula)
         localStorage.setItem('userCredentials', JSON.stringify({ matricula, senha }))
-        onAuthenticate(displayName)
-        window.alert(`Logado como ${displayName}`)
+        showNotice(`Logado como ${displayName}`, 'success', false)
+        window.setTimeout(() => onAuthenticate(displayName), 520)
       } else {
         const errorText = await response.text()
         try {
           const parsed = JSON.parse(errorText)
-          window.alert(`Erro de login: ${parsed.error || 'Credenciais inválidas'}`)
+          showNotice(`Erro de login: ${parsed.error || 'Credenciais invalidas'}`, 'error')
         } catch {
-          window.alert(`Erro de login: ${response.status} ${response.statusText}`)
+          showNotice(`Erro de login: ${response.status} ${response.statusText}`, 'error')
         }
       }
     } catch (error) {
-      window.alert('Erro de conexão ao tentar logar')
+      showNotice('Erro de conexao ao tentar logar', 'error')
     }
   }
 
   return (
-    <main className="app">
-      <section className="auth-card">
-        <h1>PrintFlow</h1>
-        <p>Gerencie ordens de impressão de maneira rápida e confiável.</p>
+    <main className="app landing-shell">
+      <section className="landing-layout">
+        <section className="landing-hero" aria-label="Apresentacao do PrintFlow">
+          <h1 className="landing-brand">PRINTFLOW</h1>
 
-        <div className="tab-row">
-          <button type="button" className={mode === 'login' ? 'tab active' : 'tab'} onClick={() => setMode('login')}>
-            Login
-          </button>
-          <button type="button" className={mode === 'register' ? 'tab active' : 'tab'} onClick={() => setMode('register')}>
-            Registrar
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <div className="field">
-            <label htmlFor="matricula">Matrícula</label>
-            <input id="matricula" name="matricula" type="text" required placeholder="123456" />
+          <div className="landing-message">
+            <p>
+              Printflow e um site exclusivamente voltado para o sistema de impressao dos alunos do Instituto Federal
+              Sul-Rio grandense Campus Lajeado.
+            </p>
+            <p>Solicite a sua impressao ou faca a recarga dos seus creditos por aqui!</p>
           </div>
 
-          {mode === 'register' && (
-            <>
-              <div className="field">
-                <label htmlFor="nomeCompleto">Nome Completo</label>
-                <input id="nomeCompleto" name="nomeCompleto" type="text" required placeholder="Fulano da Silva" />
-              </div>
-            </>
-          )}
-
-          <div className="field">
-            <label htmlFor="senha">Senha</label>
-            <input id="senha" name="senha" type="password" required placeholder="••••••••" />
-          </div>
-
-          {mode === 'register' && (
-            <div className="field">
-              <label htmlFor="confirmeSenha">Confirme sua senha</label>
-              <input id="confirmeSenha" name="confirmeSenha" type="password" required placeholder="••••••••" />
+          <div className="landing-art" aria-hidden="true">
+            <div className="paper-stack">
+              <span className="paper-sheet paper-sheet-back" />
+              <span className="paper-sheet paper-sheet-middle" />
+              <span className="paper-sheet paper-sheet-front" />
             </div>
-          )}
 
-          <button type="submit" className="primaryButton">
-            {mode === 'login' ? 'Acessar' : 'Criar conta'}
-          </button>
-        </form>
+            <div className="printer-scene">
+              <div className="printer-top">
+                <div className="printer-glass" />
+              </div>
+              <div className="printer-body">
+                <div className="printer-panel" />
+                <div className="printer-buttons">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <div className="printer-output" />
+              </div>
+              <div className="printer-pages">
+                <span />
+                <span />
+                <span />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className={mode === 'register' ? 'auth-card auth-panel auth-panel-register' : 'auth-card auth-panel'}>
+          <div className="tab-row auth-switcher" role="tablist" aria-label="Alternar autenticacao">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'login'}
+              disabled={mode === 'login'}
+              className={mode === 'login' ? 'tab active' : 'tab'}
+              onClick={() => setMode('login')}
+            >
+              Login
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'register'}
+              disabled={mode === 'register'}
+              className={mode === 'register' ? 'tab active' : 'tab'}
+              onClick={() => setMode('register')}
+            >
+              Registrar
+            </button>
+          </div>
+
+          <div className="notice-slot" aria-live="polite">
+            {notice && <div className={`inline-notice notice-${notice.type}`}>{notice.message}</div>}
+          </div>
+
+          <form
+            key={mode}
+            className={mode === 'register' ? 'auth-form auth-form-register auth-form-enter' : 'auth-form auth-form-enter'}
+            onSubmit={handleSubmit}
+          >
+            <div className="field auth-field">
+              <label htmlFor="matricula">Matrícula</label>
+              <input id="matricula" name="matricula" type="text" required placeholder="" />
+            </div>
+
+            {mode === 'register' && (
+              <div className="field auth-field">
+                <label htmlFor="nomeCompleto">Nome Completo</label>
+                <input id="nomeCompleto" name="nomeCompleto" type="text" required placeholder="" />
+              </div>
+            )}
+
+            <div className="field auth-field">
+              <label htmlFor="senha">Senha</label>
+              <input id="senha" name="senha" type="password" required placeholder="" />
+            </div>
+
+            {mode === 'register' && (
+              <div className="field auth-field">
+                <label htmlFor="confirmeSenha">Confirme sua senha</label>
+                <input id="confirmeSenha" name="confirmeSenha" type="password" required placeholder="" />
+              </div>
+            )}
+
+            <button type="submit" className="primaryButton auth-submit">
+              {mode === 'login' ? 'Acessar' : 'Criar conta'}
+            </button>
+          </form>
+        </section>
       </section>
     </main>
   )
