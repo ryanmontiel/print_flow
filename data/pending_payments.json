@@ -1,0 +1,42 @@
+{
+  "pf-1779153644764-dz0ien": {
+    "matricula": "45",
+    "amount": 5,
+    "status": "pending",
+    "createdAt": "2026-05-19T01:20:45.101Z"
+  },
+  "pf-1779154181644-x53zuz": {
+    "matricula": "45",
+    "amount": 5,
+    "status": "pending",
+    "createdAt": "2026-05-19T01:29:42.009Z"
+  },
+  "pf-1779154368546-qdcvt2": {
+    "matricula": "45",
+    "amount": 5,
+    "status": "pending",
+    "createdAt": "2026-05-19T01:32:48.856Z"
+  },
+  "pf-1779155075535-x63u4x": {
+    "matricula": "45",
+    "amount": 5,
+    "status": "pending",
+    "createdAt": "2026-05-19T01:44:36.090Z"
+  },
+  "pf-1779155276155-uk6xq6": {
+    "matricula": "45",
+    "amount": 5,
+    "status": "completed",
+    "createdAt": "2026-05-19T01:47:56.479Z",
+    "paidAt": "2026-05-19T01:49:07.441Z",
+    "transaction_nsu": "48e0f0a0-cca6-4635-a8de-cc9ad5087da8"
+  },
+  "pf-1779155506001-2j04d0": {
+    "matricula": "023",
+    "amount": 10,
+    "status": "completed",
+    "createdAt": "2026-05-19T01:51:46.327Z",
+    "paidAt": "2026-05-19T01:52:54.077Z",
+    "transaction_nsu": "ffd2c527-6916-41b4-9f75-a14bdc84ba07"
+  }
+}

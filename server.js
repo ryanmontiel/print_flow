@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -69,7 +69,7 @@ app.use(express.json());
 // Normalize JSON parsing errors so frontend always receives JSON.
 app.use((error, req, res, next) => {
   if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
-    return res.status(400).json({ error: 'Invalid JSON payload' });
+    return res.status(400).json({ error: 'JSON inválido' });
   }
   return next(error);
 });
@@ -85,29 +85,36 @@ const getBasicAuthHeader = () => {
 const DATATABLE_ID = 859;
 const ADMIN_API_BASE = 'https://app.sheetlabs.com';
 const SHEET_ORG = 'PTFL';
+const NOTIFICATIONS_KEY = '__notifications__'; // stored inside the documents JSON field
+const TRANSACTIONS_KEY = '__transactions__'; // stored inside the documents JSON field
 
 // Fetch all records from Admin API and find the full record for the given matricula
 const findUserSheetRecord = async (matricula) => {
-  const idVariants = getIdVariants(matricula).map(v => {
-    const n = Number(v);
-    return isNaN(n) ? v : n;
-  });
-  const response = await fetch(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}`, {
-    headers: { 'Authorization': getBasicAuthHeader() }
-  });
-  if (!response.ok) return null;
-  const records = await response.json();
-  return records.find(r => idVariants.includes(r.id)) ?? null;
+  try {
+    const idVariants = getIdVariants(matricula).flatMap(v => {
+      const n = Number(v);
+      return isNaN(n) ? [v] : [v, n];
+    });
+    const response = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}`, {
+      headers: { 'Authorization': getBasicAuthHeader() }
+    });
+    if (!response.ok) return null;
+    const records = await response.json();
+    return records.find(r => idVariants.includes(r.id) || idVariants.includes(String(r.id))) ?? null;
+  } catch (error) {
+    console.error('findUserSheetRecord error:', error);
+    return null;
+  }
 };
 
 const updateUserDocuments = async (matricula, documents) => {
   const serializedDocuments = JSON.stringify(documents);
   const sheetRecord = await findUserSheetRecord(matricula);
   if (!sheetRecord) {
-    return { ok: false, status: 502, error: 'Failed to locate user record for update' };
+    return { ok: false, status: 502, error: 'Falha ao localizar registro do usuário para atualização' };
   }
 
-  const updateResponse = await fetch(
+  const updateResponse = await fetchWithTimeout(
     `${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}/${sheetRecord.__id}`,
     {
       method: 'PUT',
@@ -123,8 +130,25 @@ const updateUserDocuments = async (matricula, documents) => {
     return { ok: true, status: updateResponse.status };
   }
 
-  const text = await updateResponse.text();
-  return { ok: false, status: updateResponse.status, error: text || 'Failed to update user documents' };
+  const text = await updateResponse.text().catch(() => '');
+  return { ok: false, status: updateResponse.status, error: text || 'Falha ao atualizar documentos do usuário' };
+};
+
+const FETCH_TIMEOUT = 30000; // 30 seconds
+
+const fetchWithTimeout = async (url, options = {}) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
+const safeJson = async (response) => {
+  try { return await response.json(); } catch { return null; }
 };
 
 const getIdVariants = (matricula) => {
@@ -162,37 +186,42 @@ const verifyPasswordAgainstRecord = async (senha, storedPassword) => {
 };
 
 const fetchUserRecord = async (matricula, senha) => {
-  const idVariants = getIdVariants(matricula);
+  try {
+    const idVariants = getIdVariants(matricula);
 
-  // Try direct id+password filters first for fast-path compatibility.
-  const encryptedPassword = crypto.createHash('sha256').update(String(senha)).digest('hex');
-  const passwordsToTry = encryptedPassword === senha ? [String(senha)] : [encryptedPassword, String(senha)];
+    // Try direct id+password filters first for fast-path compatibility.
+    const encryptedPassword = crypto.createHash('sha256').update(String(senha)).digest('hex');
+    const passwordsToTry = encryptedPassword === senha ? [String(senha)] : [encryptedPassword, String(senha)];
 
-  for (const idValue of idVariants) {
-    for (const passwordValue of passwordsToTry) {
-      const queryUrl = `https://sheetlabs.com/PTFL/get_info?id=${encodeURIComponent(idValue)}&password=${encodeURIComponent(passwordValue)}`;
-      const response = await fetch(queryUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': getBasicAuthHeader()
+    for (const idValue of idVariants) {
+      for (const passwordValue of passwordsToTry) {
+        const queryUrl = `https://sheetlabs.com/PTFL/get_info?id=${encodeURIComponent(idValue)}&password=${encodeURIComponent(passwordValue)}`;
+        const response = await fetchWithTimeout(queryUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': getBasicAuthHeader()
+          }
+        });
+
+        if (response.status !== 200) {
+          continue;
         }
-      });
 
-      if (response.status !== 200) {
-        continue;
+        const userData = await safeJson(response);
+        if (!userData || (Array.isArray(userData) && userData.length === 0)) {
+          continue;
+        }
+
+        const userRecord = Array.isArray(userData) ? userData[0] : userData;
+        return { userRecord, passwordValue };
       }
-
-      const userData = await response.json();
-      if (!userData || (Array.isArray(userData) && userData.length === 0)) {
-        continue;
-      }
-
-      const userRecord = Array.isArray(userData) ? userData[0] : userData;
-      return { userRecord, passwordValue };
     }
-  }
 
-  return null;
+    return null;
+  } catch (error) {
+    console.error('fetchUserRecord error:', error);
+    return null;
+  }
 };
 
 // Health check
@@ -212,7 +241,7 @@ app.get('/api/items', (req, res) => {
 app.post('/api/items', (req, res) => {
   const item = req.body;
   if (!item || !item.name) {
-    return res.status(400).json({ error: 'Invalid payload' });
+    return res.status(400).json({ error: 'Payload inválido' });
   }
 
   // In a real backend, save to DB; here we mock an ID return
@@ -223,7 +252,7 @@ app.post('/api/items', (req, res) => {
 app.post('/api/register', async (req, res) => {
   const { matricula, nomeCompleto, senha } = req.body;
   if (!matricula || !nomeCompleto || !senha) {
-    return res.status(400).json({ error: 'Missing required fields' });
+    return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
   }
 
   try {
@@ -236,7 +265,7 @@ app.post('/api/register', async (req, res) => {
       credits: 0
     }];
 
-    const response = await fetch('https://sheetlabs.com/PTFL/create_user', {
+      const response = await fetchWithTimeout('https://sheetlabs.com/PTFL/create_user', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -246,15 +275,15 @@ app.post('/api/register', async (req, res) => {
     });
 
     if (response.status === 204) {
-      res.status(201).json({ message: 'User registered successfully' });
+      res.status(201).json({ message: 'Usuário registrado com sucesso' });
     } else {
-      const text = await response.text();
+      const text = await response.text().catch(() => '');
       console.error('Sheetlabs response:', response.status, text);
-      return res.status(502).json({ error: 'External API error' });
+      return res.status(502).json({ error: 'Erro na API externa' });
     }
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Registration failed' });
+    res.status(500).json({ error: 'Falha no registro' });
   }
 });
 
@@ -262,22 +291,22 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
   const { matricula, senha } = req.body;
   if (!matricula || !senha) {
-    return res.status(400).json({ error: 'Missing matricula or senha' });
+    return res.status(400).json({ error: 'Matrícula ou senha ausentes' });
   }
 
   try {
     const lookup = await fetchUserRecord(matricula, senha);
     if (!lookup) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Credenciais inválidas' });
     }
 
     const sheetRecord = await findUserSheetRecord(matricula);
     const displayName = sheetRecord?.user ? String(sheetRecord.user) : String(matricula);
 
-    return res.status(200).json({ message: 'Login success', displayName });
+    return res.status(200).json({ message: 'Login efetuado com sucesso', displayName });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ error: 'Login failed' });
+    return res.status(500).json({ error: 'Falha no login' });
   }
 });
 
@@ -286,13 +315,13 @@ app.post('/api/documents', async (req, res) => {
   const { matricula, senha } = req.body;
 
   if (!matricula || !senha) {
-    return res.status(400).json({ error: 'Missing matricula or senha' });
+    return res.status(400).json({ error: 'Matrícula ou senha ausentes' });
   }
 
   try {
     const lookup = await fetchUserRecord(matricula, senha);
     if (!lookup) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Credenciais inválidas' });
     }
 
     const userRecord = lookup.userRecord;
@@ -304,14 +333,16 @@ app.post('/api/documents', async (req, res) => {
       console.error('Error parsing documents:', parseError);
       documents = {};
     }
+    // Remove internal keys from document list
+    const { [NOTIFICATIONS_KEY]: _n, [TRANSACTIONS_KEY]: _t, ...docsOnly } = documents;
 
     return res.status(200).json({
-      documents,
-      documentsList: Object.values(documents)
+      documents: docsOnly,
+      documentsList: Object.values(docsOnly)
     });
   } catch (error) {
     console.error('Get documents error:', error);
-    return res.status(500).json({ error: 'Failed to get documents' });
+    return res.status(500).json({ error: 'Falha ao obter documentos' });
   }
 });
 
@@ -323,7 +354,7 @@ app.post('/api/upload', (req, res) => {
     }
 
     if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+      return res.status(400).json({ error: 'Nenhum arquivo enviado' });
     }
 
     return res.status(200).json({
@@ -344,13 +375,13 @@ app.post('/api/add-document', async (req, res) => {
   const { matricula, senha, documentName, filename, originalname, mimetype, size, url } = req.body;
 
   if (!matricula || !senha || !documentName || !filename) {
-    return res.status(400).json({ error: 'Missing required fields' });
+    return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
   }
 
   try {
     const lookup = await fetchUserRecord(matricula, senha);
     if (!lookup) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Credenciais inválidas' });
     }
 
     const userRecord = lookup.userRecord;
@@ -385,12 +416,12 @@ app.post('/api/add-document', async (req, res) => {
       });
     } else {
       console.error('Sheetlabs update response:', updateResult.status, updateResult.error);
-      return res.status(502).json({ error: 'Failed to update user documents' });
+      return res.status(502).json({ error: 'Falha ao atualizar documentos do usuário' });
     }
 
   } catch (error) {
     console.error('Add document error:', error);
-    res.status(500).json({ error: 'Failed to add document' });
+    res.status(500).json({ error: 'Falha ao adicionar documento' });
   }
 });
 
@@ -398,13 +429,13 @@ app.post('/api/delete-document', async (req, res) => {
   const { matricula, senha, documentId } = req.body;
 
   if (!matricula || !senha || !documentId) {
-    return res.status(400).json({ error: 'Missing required fields' });
+    return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
   }
 
   try {
     const lookup = await fetchUserRecord(matricula, senha);
     if (!lookup) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Credenciais inválidas' });
     }
 
     let documents = {};
@@ -417,7 +448,7 @@ app.post('/api/delete-document', async (req, res) => {
 
     const removedDocument = documents[documentId];
     if (!removedDocument) {
-      return res.status(404).json({ error: 'Document not found' });
+      return res.status(404).json({ error: 'Documento não encontrado' });
     }
 
     delete documents[documentId];
@@ -425,7 +456,7 @@ app.post('/api/delete-document', async (req, res) => {
     const updateResult = await updateUserDocuments(matricula, documents);
     if (!updateResult.ok) {
       console.error('Sheetlabs delete update response:', updateResult.status, updateResult.error);
-      return res.status(502).json({ error: 'Failed to update user documents' });
+      return res.status(502).json({ error: 'Falha ao atualizar documentos do usuário' });
     }
 
     const possiblePaths = [
@@ -449,9 +480,496 @@ app.post('/api/delete-document', async (req, res) => {
     return res.status(200).json({ message: 'Document deleted successfully' });
   } catch (error) {
     console.error('Delete document error:', error);
-    return res.status(500).json({ error: 'Failed to delete document' });
+    return res.status(500).json({ error: 'Falha ao excluir documento' });
   }
 });
+
+// ─── New routes: Credits ────────────────────────────────────────────────
+
+app.get('/api/credits', async (req, res) => {
+  const { matricula, senha } = req.query;
+  if (!matricula || !senha) return res.status(400).json({ error: 'Credenciais ausentes' });
+  try {
+    const lookup = await fetchUserRecord(matricula, senha);
+    if (!lookup) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const sheetRecord = await findUserSheetRecord(matricula);
+    let documents = {};
+    try { documents = JSON.parse(sheetRecord?.documents || '{}'); } catch {}
+    const credits = Number(sheetRecord?.credits ?? 0);
+    const transactions = documents[TRANSACTIONS_KEY] || [];
+    return res.status(200).json({ credits, transactions });
+  } catch (error) {
+    console.error('Get credits error:', error);
+    return res.status(500).json({ error: 'Falha ao obter créditos' });
+  }
+});
+
+app.post('/api/credits/add', async (req, res) => {
+  const { matricula, senha, amount, description } = req.body;
+  if (!matricula || !senha || !amount) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+  try {
+    const lookup = await fetchUserRecord(matricula, senha);
+    if (!lookup) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const sheetRecord = await findUserSheetRecord(matricula);
+    const currentCredits = Number(sheetRecord?.credits ?? 0);
+    const newBalance = currentCredits + Number(amount);
+    let documents = {};
+    try { documents = JSON.parse(sheetRecord?.documents || '{}'); } catch {}
+    const transactions = documents[TRANSACTIONS_KEY] || [];
+    transactions.push({
+      amount: Number(amount),
+      description: description || 'Adição de créditos',
+      type: 'credit',
+      createdAt: new Date().toISOString()
+    });
+    documents[TRANSACTIONS_KEY] = transactions;
+    const updateResponse = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}/${sheetRecord.__id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
+      body: JSON.stringify({ ...sheetRecord, credits: newBalance, documents: JSON.stringify(documents) })
+    });
+    if (updateResponse.status === 204 || updateResponse.status === 200) {
+      return res.status(200).json({ credits: newBalance, transactions });
+    }
+    const text = await updateResponse.text().catch(() => '');
+    return res.status(502).json({ error: `Falha ao atualizar créditos (${updateResponse.status}): ${text.slice(0, 200)}` });
+  } catch (error) {
+    console.error('Add credits error:', error);
+    return res.status(500).json({ error: 'Falha ao adicionar créditos' });
+  }
+});
+
+// ─── New routes: Print & History ───────────────────────────────────────
+
+app.post('/api/print', async (req, res) => {
+  const { matricula, senha, documentId, documentName, pages, cost } = req.body;
+  if (!matricula || !senha || !documentId) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+  try {
+    const lookup = await fetchUserRecord(matricula, senha);
+    if (!lookup) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const sheetRecord = await findUserSheetRecord(matricula);
+    const currentCredits = Number(sheetRecord?.credits ?? 0);
+    if (currentCredits < (cost || 0)) return res.status(402).json({ error: 'Créditos insuficientes' });
+    let printHistory = [];
+    try { printHistory = JSON.parse(sheetRecord?.printHistory || '[]'); } catch { printHistory = []; }
+    const printRecord = {
+      id: Date.now().toString(),
+      documentId,
+      documentName: documentName || 'Unknown',
+      pages: pages || 1,
+      cost: cost || 0,
+      status: 'completed',
+      printedAt: new Date().toISOString()
+    };
+    printHistory.push(printRecord);
+    const newBalance = currentCredits - cost;
+    let documents = {};
+    try { documents = JSON.parse(sheetRecord?.documents || '{}'); } catch {}
+    const transactions = documents[TRANSACTIONS_KEY] || [];
+    transactions.push({
+      amount: -(cost || 0),
+      description: `Impressão: ${documentName || 'Documento'}`,
+      type: 'debit',
+      createdAt: new Date().toISOString()
+    });
+    documents[TRANSACTIONS_KEY] = transactions;
+    const updateResponse = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}/${sheetRecord.__id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
+      body: JSON.stringify({ ...sheetRecord, credits: newBalance, documents: JSON.stringify(documents), printHistory: JSON.stringify(printHistory) })
+    });
+    if (updateResponse.status === 204 || updateResponse.status === 200) {
+      return res.status(200).json({ message: 'Impressão concluída', printRecord, credits: newBalance });
+    }
+    return res.status(502).json({ error: 'Falha ao processar impressão' });
+  } catch (error) {
+    console.error('Print error:', error);
+    return res.status(500).json({ error: 'Falha ao processar impressão' });
+  }
+});
+
+app.get('/api/print-history', async (req, res) => {
+  const { matricula, senha } = req.query;
+  if (!matricula || !senha) return res.status(400).json({ error: 'Credenciais ausentes' });
+  try {
+    const lookup = await fetchUserRecord(matricula, senha);
+    if (!lookup) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const sheetRecord = await findUserSheetRecord(matricula);
+    let printHistory = [];
+    try { printHistory = JSON.parse(sheetRecord?.printHistory || '[]'); } catch { printHistory = []; }
+    return res.status(200).json({ printHistory: printHistory.sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt)) });
+  } catch (error) {
+    console.error('Print history error:', error);
+    return res.status(500).json({ error: 'Falha ao obter histórico de impressão' });
+  }
+});
+
+// ─── New routes: Share Document ────────────────────────────────────────
+
+app.post('/api/share-document', async (req, res) => {
+  const { matricula, senha, targetMatricula, documentId, documentName, message } = req.body;
+  if (!matricula || !senha || !targetMatricula || !documentId) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+  try {
+    // Step 1: authenticate sender
+    const lookup = await fetchUserRecord(matricula, senha);
+    if (!lookup) return res.status(401).json({ error: 'Credenciais inválidas' });
+
+    // Step 2: get sender's full record
+    const sheetRecord = await findUserSheetRecord(matricula);
+    if (!sheetRecord) return res.status(500).json({ error: 'Erro interno: não foi possível localizar seus dados na base' });
+    const senderName = sheetRecord.user || matricula;
+
+    // Step 3: find the document in sender's account
+    let senderDocs = {};
+    try { senderDocs = JSON.parse(sheetRecord.documents || '{}'); } catch { senderDocs = {}; }
+    const sourceDoc = senderDocs[documentId];
+    if (!sourceDoc) return res.status(404).json({ error: 'Documento não encontrado na sua conta' });
+
+    // Step 4: find target user
+    const idVariants = getIdVariants(targetMatricula).flatMap(v => {
+      const n = Number(v);
+      return isNaN(n) ? [v] : [v, n];
+    });
+    const allResponse = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}`, { headers: { 'Authorization': getBasicAuthHeader() } });
+    if (!allResponse.ok) {
+      const text = await allResponse.text().catch(() => 'unknown');
+      return res.status(502).json({ error: `Falha ao buscar usuários na API (${allResponse.status}: ${text.slice(0, 200)})` });
+    }
+    const allRecords = await safeJson(allResponse);
+    if (!Array.isArray(allRecords)) return res.status(502).json({ error: 'Resposta inválida da API ao buscar usuários' });
+    const targetRecord = allRecords.find(r => idVariants.includes(r.id) || idVariants.includes(String(r.id)));
+    if (!targetRecord) return res.status(404).json({ error: 'Usuário de destino não encontrado' });
+    if (!targetRecord.__id) return res.status(502).json({ error: 'Registro do destino não possui identificador interno (__id)' });
+
+    // Step 5: copy document with sent: prefix
+    let recipientDocs = {};
+    try { recipientDocs = JSON.parse(targetRecord.documents || '{}'); } catch { recipientDocs = {}; }
+    // Extract existing notifications from documents
+    const existingNotifications = recipientDocs[NOTIFICATIONS_KEY] || [];
+    delete recipientDocs[NOTIFICATIONS_KEY];
+    const newDocId = Date.now().toString();
+    recipientDocs[newDocId] = {
+      ...sourceDoc,
+      id: newDocId,
+      name: `sent:${documentName || sourceDoc.name}`,
+      uploadedAt: new Date().toISOString(),
+      sentFromMatricula: matricula,
+      sentFromName: senderName,
+      sentMessage: message || '',
+      sentDocId: documentId,
+    };
+
+    // Step 6: create notification (stored inside documents JSON to avoid schema issues)
+    existingNotifications.push({
+      id: Date.now().toString() + '-n',
+      type: 'share_request',
+      fromMatricula: matricula,
+      fromName: senderName,
+      documentId: newDocId,
+      documentName: documentName || sourceDoc.name,
+      message: message || '',
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    });
+    recipientDocs[NOTIFICATIONS_KEY] = existingNotifications;
+
+    // Step 7: save to API (only includes `documents` field, notifications lives inside it)
+    const updateResponse = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}/${targetRecord.__id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
+      body: JSON.stringify({ ...targetRecord, documents: JSON.stringify(recipientDocs) })
+    });
+    if (updateResponse.status === 204 || updateResponse.status === 200) {
+      return res.status(200).json({ message: 'Documento compartilhado com sucesso' });
+    }
+    const errText = await updateResponse.text().catch(() => '');
+    return res.status(502).json({ error: `API recusou atualização (status ${updateResponse.status}): ${errText.slice(0, 200)}` });
+  } catch (error) {
+    console.error('Share document error:', error);
+    const msg = error instanceof Error ? error.message : 'Erro desconhecido';
+    return res.status(500).json({ error: `Falha ao compartilhar documento: ${msg}` });
+  }
+});
+
+app.post('/api/handle-share', async (req, res) => {
+  const { matricula, senha, notificationId, action } = req.body;
+  if (!matricula || !senha || !notificationId || !action) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+  if (!['accepted', 'rejected'].includes(action)) return res.status(400).json({ error: 'Ação inválida' });
+  try {
+    const lookup = await fetchUserRecord(matricula, senha);
+    if (!lookup) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const sheetRecord = await findUserSheetRecord(matricula);
+
+    // Parse documents (which also stores notifications internally)
+    let recipientDocs = {};
+    try { recipientDocs = JSON.parse(sheetRecord.documents || '{}'); } catch { recipientDocs = {}; }
+    // Extract and update notifications from documents
+    let notifications = recipientDocs[NOTIFICATIONS_KEY] || [];
+    const notifIndex = notifications.findIndex(n => n.id === notificationId);
+    if (notifIndex === -1) return res.status(404).json({ error: 'Notificação não encontrada' });
+    notifications[notifIndex].status = action;
+
+    const docId = notifications[notifIndex].documentId;
+    const sharedDoc = recipientDocs[docId];
+
+    // Remove internal key before saving documents
+    delete recipientDocs[NOTIFICATIONS_KEY];
+
+    if (action === 'accepted') {
+      // Remove sent: prefix, clear sender fields
+      if (sharedDoc && sharedDoc.name && sharedDoc.name.startsWith('sent:')) {
+        recipientDocs[docId] = {
+          ...sharedDoc,
+          name: sharedDoc.name.replace(/^sent:/, ''),
+          sentFromMatricula: undefined,
+          sentFromName: undefined,
+          sentMessage: undefined,
+          sentDocId: undefined,
+        };
+      }
+    } else if (action === 'rejected') {
+      // Delete the document
+      delete recipientDocs[docId];
+    }
+
+    // Re-attach notifications to documents
+    recipientDocs[NOTIFICATIONS_KEY] = notifications;
+
+    const updateResponse = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}/${sheetRecord.__id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
+      body: JSON.stringify({ ...sheetRecord, documents: JSON.stringify(recipientDocs) })
+    });
+    if (updateResponse.status === 204 || updateResponse.status === 200) {
+      return res.status(200).json({ message: action === 'accepted' ? 'Compartilhamento aceito' : 'Compartilhamento recusado' });
+    }
+    return res.status(502).json({ error: 'Falha ao atualizar compartilhamento' });
+  } catch (error) {
+    console.error('Handle share error:', error);
+    return res.status(500).json({ error: 'Falha ao processar compartilhamento' });
+  }
+});
+
+// ─── New routes: Notifications ─────────────────────────────────────────
+
+app.get('/api/notifications', async (req, res) => {
+  const { matricula, senha } = req.query;
+  if (!matricula || !senha) return res.status(400).json({ error: 'Credenciais ausentes' });
+  try {
+    const lookup = await fetchUserRecord(matricula, senha);
+    if (!lookup) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const sheetRecord = await findUserSheetRecord(matricula);
+    let documents = {};
+    try { documents = JSON.parse(sheetRecord?.documents || '{}'); } catch { documents = {}; }
+    const notifications = documents[NOTIFICATIONS_KEY] || [];
+    return res.status(200).json({ notifications: notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) });
+  } catch (error) {
+    console.error('Get notifications error:', error);
+    return res.status(500).json({ error: 'Falha ao obter notificações' });
+  }
+});
+
+// ─── InfinitePay integration ──────────────────────────────────────────
+
+const INFINITE_HANDLE = 'ryan-montiel';
+const INFINITE_API = 'https://api.checkout.infinitepay.io';
+const PENDING_DIR = path.join(__dirname, 'data');
+const PENDING_FILE = path.join(PENDING_DIR, 'pending_payments.json');
+
+if (!fs.existsSync(PENDING_DIR)) {
+  fs.mkdirSync(PENDING_DIR, { recursive: true });
+}
+
+const readPendingPayments = () => {
+  try {
+    if (!fs.existsSync(PENDING_FILE)) return {};
+    return JSON.parse(fs.readFileSync(PENDING_FILE, 'utf-8'));
+  } catch { return {}; }
+};
+
+const writePendingPayments = (data) => {
+  fs.writeFileSync(PENDING_FILE, JSON.stringify(data, null, 2), 'utf-8');
+};
+
+const addCreditsToUser = async (matricula, amount, description) => {
+  const sheetRecord = await findUserSheetRecord(matricula);
+  if (!sheetRecord) throw new Error(`Usuário ${matricula} não encontrado na base para adicionar créditos`);
+  if (!sheetRecord.__id) throw new Error(`Registro do usuário ${matricula} está sem identificador interno (__id)`);
+  const currentCredits = Number(sheetRecord.credits ?? 0);
+  const newBalance = currentCredits + Number(amount);
+  let documents = {};
+  try { documents = JSON.parse(sheetRecord.documents || '{}'); } catch {}
+  const transactions = documents[TRANSACTIONS_KEY] || [];
+  transactions.push({
+    amount: Number(amount),
+    description: description || 'Adição de créditos',
+    type: 'credit',
+    createdAt: new Date().toISOString()
+  });
+  documents[TRANSACTIONS_KEY] = transactions;
+  const response = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}/${sheetRecord.__id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
+    body: JSON.stringify({ ...sheetRecord, credits: newBalance, documents: JSON.stringify(documents) })
+  });
+  if (response.status !== 204 && response.status !== 200) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`Falha ao atualizar créditos (status ${response.status}): ${text.slice(0, 200)}`);
+  }
+};
+
+// Create a payment link via InfinitePay Checkout API
+app.post('/api/create-payment-link', async (req, res) => {
+  const { matricula, senha, amount, redirect_url } = req.body;
+  if (!matricula || !senha || !amount || amount <= 0) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+  try {
+    const lookup = await fetchUserRecord(matricula, senha);
+    if (!lookup) return res.status(401).json({ error: 'Credenciais inválidas' });
+
+    const order_nsu = `pf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const priceInCents = Math.round(amount * 100);
+    const defaultRedirect = redirect_url || `${req.protocol}://${req.get('host')}/credits`;
+
+    const payload = {
+      handle: INFINITE_HANDLE,
+      items: [{ quantity: 1, price: priceInCents, description: `Créditos PrintFlow - R$ ${amount.toFixed(2)}` }],
+      order_nsu,
+      redirect_url: defaultRedirect,
+      webhook_url: `${req.protocol}://${req.get('host')}/api/webhook-infinitepay`,
+      payment_methods: ['pix'],
+    };
+
+    const response = await fetchWithTimeout(`${INFINITE_API}/links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      return res.status(502).json({ error: `InfinitePay recusou (${response.status}): ${text.slice(0, 200)}` });
+    }
+
+    const data = await safeJson(response);
+    if (!data?.url) return res.status(502).json({ error: 'Resposta inválida da InfinitePay' });
+
+    // Store pending payment
+    const pending = readPendingPayments();
+    pending[order_nsu] = { matricula, amount, status: 'pending', createdAt: new Date().toISOString() };
+    writePendingPayments(pending);
+
+    return res.status(200).json({ url: data.url, order_nsu });
+  } catch (error) {
+    console.error('Create payment link error:', error);
+    const msg = error instanceof Error ? error.message : 'Erro desconhecido';
+    return res.status(500).json({ error: `Falha ao criar link de pagamento: ${msg}` });
+  }
+});
+
+// Check payment status (called by frontend after redirect from InfinitePay)
+// Calls InfinitePay's payment_check API synchronously since webhook may not
+// reach localhost in dev mode.
+app.post('/api/check-payment', async (req, res) => {
+  const { matricula, senha, order_nsu, slug, transaction_nsu } = req.body;
+  if (!matricula || !senha || !order_nsu) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+  try {
+    const lookup = await fetchUserRecord(matricula, senha);
+    if (!lookup) return res.status(401).json({ error: 'Credenciais inválidas' });
+
+    const pending = readPendingPayments();
+    const payment = pending[order_nsu];
+    if (!payment) return res.status(404).json({ error: 'Pagamento não encontrado' });
+    if (payment.matricula !== matricula) return res.status(403).json({ error: 'Pagamento não pertence a este usuário' });
+
+    // Already confirmed by webhook
+    if (payment.status === 'completed') {
+      return res.status(200).json({ paid: true, amount: payment.amount });
+    }
+
+    // Consult InfinitePay API synchronously
+    if (slug || transaction_nsu) {
+      const checkPayload = { handle: INFINITE_HANDLE, order_nsu };
+      if (slug) checkPayload.slug = slug;
+      if (transaction_nsu) checkPayload.transaction_nsu = transaction_nsu;
+      const checkResponse = await fetchWithTimeout(`${INFINITE_API}/payment_check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(checkPayload),
+      });
+      if (checkResponse.ok) {
+        const checkData = await safeJson(checkResponse);
+        if (checkData?.paid) {
+          // Payment confirmed — add credits immediately
+          try {
+            await addCreditsToUser(matricula, payment.amount, `Créditos via InfinitePay (${transaction_nsu || order_nsu})`);
+          } catch (creditError) {
+            const msg = creditError instanceof Error ? creditError.message : String(creditError);
+            console.error('Failed to add credits after payment check:', msg);
+            return res.status(500).json({ error: `Pagamento confirmado, mas falha ao adicionar créditos: ${msg}` });
+          }
+          payment.status = 'completed';
+          payment.paidAt = new Date().toISOString();
+          payment.transaction_nsu = transaction_nsu || '';
+          pending[order_nsu] = payment;
+          writePendingPayments(pending);
+          return res.status(200).json({ paid: true, amount: payment.amount });
+        }
+      }
+    }
+
+    return res.status(200).json({ paid: false });
+  } catch (error) {
+    console.error('Check payment error:', error);
+    return res.status(500).json({ error: 'Falha ao verificar pagamento' });
+  }
+});
+
+// Webhook received from InfinitePay when payment is confirmed
+app.post('/api/webhook-infinitepay', async (req, res) => {
+  try {
+    const { order_nsu, transaction_nsu, paid_amount, capture_method } = req.body;
+    if (!order_nsu) return res.status(400).json({ error: 'Missing order_nsu' });
+
+    const pending = readPendingPayments();
+    const payment = pending[order_nsu];
+    if (!payment) {
+      console.warn('Webhook received for unknown order:', order_nsu);
+      return res.status(200).json({ received: true }); // Ack anyway
+    }
+    if (payment.status === 'completed') return res.status(200).json({ received: true });
+
+    try {
+      await addCreditsToUser(payment.matricula, payment.amount, `Créditos via InfinitePay (${transaction_nsu || order_nsu})`);
+      console.log(`Credits added via webhook: ${payment.matricula} +${payment.amount} (order: ${order_nsu})`);
+    } catch (err) {
+      console.error('Webhook: failed to add credits:', err);
+    }
+
+    // Mark as completed
+    payment.status = 'completed';
+    payment.paidAt = new Date().toISOString();
+    payment.transaction_nsu = transaction_nsu || '';
+    payment.capture_method = capture_method || '';
+    pending[order_nsu] = payment;
+    writePendingPayments(pending);
+
+    return res.status(200).json({ received: true });
+  } catch (error) {
+    console.error('Webhook error:', error);
+    return res.status(200).json({ received: true }); // Always ack to prevent retries
+  }
+});
+
+// ─── Production: serve built frontend ──────────────────────────────────
+const __dist = path.join(__dirname, 'dist');
+if (fs.existsSync(__dist)) {
+  app.use(express.static(__dist));
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
+      res.sendFile(path.join(__dist, 'index.html'));
+    }
+  });
+}
 
 app.listen(port, () => {
   console.log(`Backend server listening on http://localhost:${port}`);

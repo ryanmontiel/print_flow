@@ -1,0 +1,56 @@
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+
+type User = {
+  matricula: string
+  nome: string
+}
+
+type AuthContextType = {
+  user: User | null
+  login: (matricula: string, nome: string) => void
+  logout: () => void
+  isLoading: boolean
+}
+
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  login: () => {},
+  logout: () => {},
+  isLoading: true,
+})
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const stored = localStorage.getItem('printflow-user')
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored)
+        setUser(parsed)
+      } catch {}
+    }
+    setIsLoading(false)
+  }, [])
+
+  const login = (matricula: string, nome: string) => {
+    const u = { matricula, nome }
+    localStorage.setItem('printflow-user', JSON.stringify(u))
+    setUser(u)
+  }
+
+  const logout = () => {
+    localStorage.removeItem('printflow-user')
+    localStorage.removeItem('userCredentials')
+    setUser(null)
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+export const useAuth = () => useContext(AuthContext)
