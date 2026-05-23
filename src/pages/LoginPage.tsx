@@ -8,6 +8,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [notice, setNotice] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [remember, setRemember] = useState(false)
   const noticeTimerRef = useRef<number | null>(null)
   const { login } = useAuth()
   const navigate = useNavigate()
@@ -51,14 +52,16 @@ export default function LoginPage() {
         }
         await apiRegister(matricula, nomeCompleto, senha)
         showNotice('Conta criada!', 'success')
-        localStorage.setItem('userCredentials', JSON.stringify({ matricula, senha }))
-        localStorage.setItem('pf-new-reg', 'true')
-        login(matricula, nomeCompleto)
+        const storageReg = remember ? localStorage : sessionStorage
+        storageReg.setItem('userCredentials', JSON.stringify({ matricula, senha }))
+        if (remember) localStorage.setItem('pf-new-reg', 'true')
+        login(matricula, nomeCompleto, remember)
         setTimeout(() => navigate('/home'), 500)
       } else {
         const result = await apiLogin(matricula, senha)
-        localStorage.setItem('userCredentials', JSON.stringify({ matricula, senha }))
-        login(matricula, result.displayName)
+        const storage = remember ? localStorage : sessionStorage
+        storage.setItem('userCredentials', JSON.stringify({ matricula, senha }))
+        login(matricula, result.displayName, remember)
         setTimeout(() => navigate('/home'), 500)
       }
     } catch (err) {
@@ -172,6 +175,18 @@ export default function LoginPage() {
                   className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
                 />
               </div>
+            )}
+
+            {mode === 'login' && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={remember}
+                  onChange={e => setRemember(e.target.checked)}
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-gray-600 dark:text-gray-400">Lembrar de mim</span>
+              </label>
             )}
 
             <button

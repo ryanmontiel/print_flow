@@ -7,7 +7,7 @@ type User = {
 
 type AuthContextType = {
   user: User | null
-  login: (matricula: string, nome: string) => void
+  login: (matricula: string, nome: string, remember?: boolean) => void
   logout: () => void
   isLoading: boolean
 }
@@ -24,7 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const stored = localStorage.getItem('printflow-user')
+    const stored = localStorage.getItem('printflow-user') || sessionStorage.getItem('printflow-user')
     if (stored) {
       try {
         const parsed = JSON.parse(stored)
@@ -34,15 +34,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false)
   }, [])
 
-  const login = (matricula: string, nome: string) => {
+  const login = (matricula: string, nome: string, remember: boolean = false) => {
     const u = { matricula, nome }
-    localStorage.setItem('printflow-user', JSON.stringify(u))
+    const storage = remember ? localStorage : sessionStorage
+    storage.setItem('printflow-user', JSON.stringify(u))
     setUser(u)
   }
 
   const logout = () => {
     localStorage.removeItem('printflow-user')
     localStorage.removeItem('userCredentials')
+    sessionStorage.removeItem('printflow-user')
+    sessionStorage.removeItem('userCredentials')
     setUser(null)
   }
 

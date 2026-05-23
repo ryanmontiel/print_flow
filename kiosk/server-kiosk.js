@@ -13,16 +13,65 @@ const PORT = process.env.KIOSK_PORT || 4003;
 const MAIN_SERVER = process.env.MAIN_SERVER || 'https://print-flow-frjf.onrender.com';
 const BIND_ADDRESS = process.env.KIOSK_BIND || '127.0.0.1';
 const CUPS_PRINTER = process.env.CUPS_PRINTER || 'printflow';
+const CACHE_DIR = path.join(__dirname, 'cache');
+
+// Ensure cache directory exists
+if (!fs.existsSync(CACHE_DIR)) {
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
 
 app.use(express.json());
 
-// CUPS print endpoint (MUST be before the /api/* proxy)
+// ── Warm-up & keep-alive ──────────────────────────────────────────────
+
+async function pingMainServer() {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    await fetch(`${MAIN_SERVER}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ matricula: 'keepalive', senha: 'keepalive' }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    console.log(`[keepalive] Main server pinged OK`);
+  } catch (err) {
+    console.log(`[keepalive] Main server ping (expected if sleeping): ${err.message}`);
+  }
+}
+
+// Warm-up on startup
+pingMainServer();
+// Keep-alive every 5 minutes to prevent Render from sleeping
+setInterval(pingMainServer, 5 * 60 * 1000);
+
+// ── Health check for frontend warm-up ────────────────────────────────
+app.get('/api/health', async (_req, res) => {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    await fetch(`${MAIN_SERVER}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ matricula: 'warmup', senha: 'warmup' }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    res.json({ status: 'ok' });
+  } catch {
+    res.json({ status: 'warming' });
+  }
+});
+
+// ── CUPS print endpoint ──────────────────────────────────────────────
 app.post('/api/cups-print', async (req, res) => {
   const { fileUrl } = req.body;
   if (!fileUrl) return res.status(400).json({ error: 'fileUrl é obrigatório' });
 
   try {
-    const fileResponse = await fetch(`${MAIN_SERVER}${fileUrl}`);
+    const absoluteUrl = fileUrl.startsWith('http') ? fileUrl : `${MAIN_SERVER}${fileUrl}`;
+    const fileResponse = await fetch(absoluteUrl);
     if (!fileResponse.ok) throw new Error('Falha ao baixar o arquivo do servidor principal');
 
     const buffer = Buffer.from(await fileResponse.arrayBuffer());
@@ -50,23 +99,47 @@ app.post('/api/cups-print', async (req, res) => {
   }
 });
 
-// Proxy /uploads (PDFs, images) to the main server
+// ── Proxy /uploads with local cache ──────────────────────────────────
 app.all('/uploads/*', async (req, res) => {
+  const cacheKey = req.originalUrl.replace(/\//g, '_').replace(/[^a-zA-Z0-9._-]/g, '');
+  const cachePath = path.join(CACHE_DIR, cacheKey);
+
+  // Serve from cache if available
+  if (fs.existsSync(cachePath)) {
+    const ext = path.extname(req.originalUrl).toLowerCase();
+    const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
+    res.set('Content-Type', mimeMap[ext] || 'application/octet-stream');
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cache-Control', 'public, max-age=86400');
+    return res.sendFile(cachePath);
+  }
+
   try {
     const targetUrl = `${MAIN_SERVER}${req.originalUrl}`;
-    const response = await fetch(targetUrl);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    const response = await fetch(targetUrl, { signal: controller.signal });
+    clearTimeout(timeout);
     const buffer = Buffer.from(await response.arrayBuffer());
+
+    // Save to local cache (async, don't block response)
+    fs.writeFile(cachePath, buffer, () => {});
+
     res.set('Content-Type', response.headers.get('content-type') || 'application/octet-stream');
     res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cache-Control', 'public, max-age=86400');
     res.send(buffer);
   } catch (err) {
     console.error('Kiosk uploads proxy error:', err.message);
-    res.status(502).json({ error: 'Falha ao baixar arquivo do servidor principal' });
+    res.status(504).json({ error: 'Falha ao baixar arquivo do servidor principal' });
   }
 });
 
 // Proxy all /api requests to the main server
 app.all('/api/*', async (req, res) => {
+  // Skip internal routes
+  if (req.path === '/api/health') return;
+
   try {
     const targetUrl = `${MAIN_SERVER}${req.originalUrl}`;
     const fetchOptions = {
@@ -100,4 +173,5 @@ app.listen(PORT, BIND_ADDRESS, () => {
   console.log(`Kiosk server running on http://${BIND_ADDRESS}:${PORT}`);
   console.log(`Proxying /api to ${MAIN_SERVER}`);
   console.log(`CUPS printer: ${CUPS_PRINTER}`);
+  console.log(`File cache: ${CACHE_DIR}`);
 });

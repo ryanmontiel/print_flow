@@ -346,9 +346,34 @@ app.post('/api/documents', async (req, res) => {
   }
 });
 
+// Upload file to Catbox.moe CDN
+async function uploadToCatbox(filePath, fileName) {
+  try {
+    const formData = new FormData();
+    const blob = new Blob([fs.readFileSync(filePath)], { type: 'application/octet-stream' });
+    formData.append('reqtype', 'fileupload');
+    formData.append('fileToUpload', blob, fileName);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    const response = await fetch('https://catbox.moe/user/api.php', {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    const url = (await response.text()).trim();
+    if (url.startsWith('https://')) return url;
+    console.error('Catbox returned invalid URL:', url);
+    return null;
+  } catch (err) {
+    console.error('Catbox upload error:', err.message);
+    return null;
+  }
+}
+
 // File upload endpoint
-app.post('/api/upload', (req, res) => {
-  upload.single('file')(req, res, (error) => {
+app.post('/api/upload', async (req, res) => {
+  upload.single('file')(req, res, async (error) => {
     if (error) {
       return res.status(400).json({ error: error.message || 'File upload failed' });
     }
@@ -357,6 +382,10 @@ app.post('/api/upload', (req, res) => {
       return res.status(400).json({ error: 'Nenhum arquivo enviado' });
     }
 
+    // Upload to Catbox CDN
+    const catboxUrl = await uploadToCatbox(req.file.path, req.file.originalname);
+    const fileUrl = catboxUrl || `/uploads/${req.file.filename}`;
+
     return res.status(200).json({
       message: 'File uploaded successfully',
       file: {
@@ -364,7 +393,7 @@ app.post('/api/upload', (req, res) => {
         originalname: req.file.originalname,
         mimetype: req.file.mimetype,
         size: req.file.size,
-        url: `/uploads/${req.file.filename}`
+        url: fileUrl
       }
     });
   });

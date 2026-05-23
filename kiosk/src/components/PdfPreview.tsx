@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { CheckSquare, Square } from 'lucide-react'
+import { CheckSquare, Square, RefreshCw, AlertCircle } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
 
 const version = pdfjsLib.version
@@ -17,26 +17,31 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null)
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [previewPage, setPreviewPage] = useState(1)
-
   const loadPdf = useCallback(async () => {
     setLoading(true)
+    setError('')
     setPdfDoc(null)
     try {
-      const doc = await pdfjsLib.getDocument(url).promise
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 30000)
+      const doc = await pdfjsLib.getDocument({ url, useSystemFonts: true, stopAtErrors: false }).promise
+      clearTimeout(timeout)
       setPdfDoc(doc)
       setTotalPages(doc.numPages)
       setPreviewPage(1)
-      // Auto-select all pages on first load
       const all = new Set(Array.from({ length: doc.numPages }, (_, i) => i + 1))
       onSelectionChange(all)
       onPageCount?.(doc.numPages)
     } catch (err) {
-      console.error('PDF load error:', err)
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido'
+      console.error('PDF load error:', msg)
+      setError(msg)
     } finally {
       setLoading(false)
     }
-  }, [url])
+  }, [url, onSelectionChange, onPageCount])
 
   useEffect(() => { loadPdf() }, [loadPdf])
 
@@ -46,17 +51,21 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
 
   const renderPage = async (num: number) => {
     if (!pdfDoc || !canvasRef.current) return
-    const page = await pdfDoc.getPage(num)
-    const container = canvasRef.current.parentElement!
-    const maxW = Math.min(container.clientWidth - 32, 600)
-    const viewport = page.getViewport({ scale: 1 })
-    const scale = maxW / viewport.width
-    const scaled = page.getViewport({ scale })
-    const canvas = canvasRef.current
-    canvas.width = scaled.width
-    canvas.height = scaled.height
-    canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
-    await page.render({ canvas, viewport: scaled }).promise
+    try {
+      const page = await pdfDoc.getPage(num)
+      const container = canvasRef.current.parentElement!
+      const maxW = Math.min(container.clientWidth - 32, 600)
+      const viewport = page.getViewport({ scale: 1 })
+      const scale = maxW / viewport.width
+      const scaled = page.getViewport({ scale })
+      const canvas = canvasRef.current
+      canvas.width = scaled.width
+      canvas.height = scaled.height
+      canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
+      await page.render({ canvas, viewport: scaled }).promise
+    } catch (err) {
+      console.error('PDF render error:', err)
+    }
   }
 
   const togglePage = (n: number) => {
@@ -80,8 +89,26 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64 bg-gray-100 rounded-xl">
+      <div className="flex flex-col items-center justify-center h-64 bg-gray-100 rounded-xl gap-3">
         <div className="animate-spin w-8 h-8 border-2 border-primary-600 border-t-transparent rounded-full" />
+        <p className="text-xs text-gray-400">Carregando PDF...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center bg-gray-100 rounded-xl p-8 text-gray-400 min-h-[200px]">
+        <AlertCircle size={32} className="mb-2" />
+        <p className="text-sm">Erro ao carregar PDF</p>
+        <p className="text-xs text-gray-300 mt-1 max-w-xs text-center truncate">{error}</p>
+        <button
+          onClick={() => loadPdf()}
+          className="mt-3 flex items-center gap-1 text-xs px-3 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors"
+        >
+          <RefreshCw size={14} />
+          Tentar novamente
+        </button>
       </div>
     )
   }
@@ -96,12 +123,10 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
 
   return (
     <div className="space-y-3">
-      {/* Current page preview */}
       <div className="flex justify-center bg-gray-100 rounded-xl p-4 min-h-[250px] max-h-[450px] overflow-auto">
         <canvas ref={canvasRef} className="shadow-lg bg-white" />
       </div>
 
-      {/* Selection toolbar */}
       <div className="flex items-center justify-between">
         <span className="text-sm text-gray-500">
           {selectedPages.size} de {totalPages} páginas selecionadas
@@ -126,7 +151,6 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
         </div>
       </div>
 
-      {/* Thumbnail strip */}
       <div className="flex gap-2 overflow-x-auto pb-2 px-1 justify-center flex-wrap">
         {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => {
           const isSelected = selectedPages.has(n)
@@ -141,8 +165,7 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
               } ${n === previewPage ? 'ring-2 ring-primary-300' : ''}`}
               title={`Página ${n}${isSelected ? '' : ' (não selecionada)'}`}
             >
-              <PdfThumbnail url={url} pageNum={n} scale={0.22} />
-              {/* Selection badge */}
+              <PdfThumbnail page={pdfDoc} pageNum={n} scale={0.22} />
               <div className={`absolute top-0.5 right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${
                 isSelected ? 'bg-primary-600' : 'bg-gray-400'
               }`}>
@@ -156,28 +179,26 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
   )
 }
 
-function PdfThumbnail({ url, pageNum, scale }: { url: string; pageNum: number; scale: number }) {
+function PdfThumbnail({ page, pageNum, scale }: { page: pdfjsLib.PDFDocumentProxy; pageNum: number; scale: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     let cancelled = false
     const render = async () => {
       try {
-        const doc = await pdfjsLib.getDocument(url).promise
+        const p = await page.getPage(pageNum)
         if (cancelled) return
-        const page = await doc.getPage(pageNum)
-        if (cancelled) return
-        const viewport = page.getViewport({ scale })
+        const viewport = p.getViewport({ scale })
         const canvas = canvasRef.current
         if (!canvas) return
         canvas.width = viewport.width
         canvas.height = viewport.height
-        await page.render({ canvas, viewport }).promise
+        await p.render({ canvas, viewport }).promise
       } catch {}
     }
     render()
     return () => { cancelled = true }
-  }, [url, pageNum, scale])
+  }, [page, pageNum, scale])
 
   return <canvas ref={canvasRef} className="block" style={{ width: 72, height: 72 * 1.4 }} />
 }

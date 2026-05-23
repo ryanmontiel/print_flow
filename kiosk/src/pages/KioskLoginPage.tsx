@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Printer, Loader2 } from 'lucide-react'
-import { apiLogin } from '../api'
+import { apiLogin, apiHealthCheck } from '../api'
 
 export default function KioskLoginPage() {
   const [matricula, setMatricula] = useState('')
@@ -9,6 +9,9 @@ export default function KioskLoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
+
+  // Warm-up: ping main server to wake Render while user types credentials
+  useEffect(() => { apiHealthCheck().catch(() => {}) }, [])
 
   // If already logged in, go straight to print
   useEffect(() => {

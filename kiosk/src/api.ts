@@ -124,6 +124,9 @@ export type Notification = {
   createdAt: string
 }
 
+export const apiHealthCheck = () =>
+  request<{ status: string }>('/api/health')
+
 export const apiGetNotifications = () => {
   const { matricula, senha } = getCredentials()
   return request<{ notifications: Notification[] }>('/api/notifications', {

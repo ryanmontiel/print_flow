@@ -6,6 +6,7 @@ import {
   ChevronLeft, File, Image
 } from 'lucide-react'
 import PdfPreview from '../components/PdfPreview'
+import ImagePreview from '../components/ImagePreview'
 import { apiGetDocuments, apiGetCredits, apiPrint, apiCupsPrint, apiHandleShare, apiGetNotifications, BLACK_WHITE_PRICE, type StoredDocument } from '../api'
 
 type Step = 'select' | 'simulate' | 'done'
@@ -62,6 +63,10 @@ export default function KioskPrintPage() {
       ])
       setDocs(docRes.documentsList)
       setCredits(credRes.credits)
+      // Pre-fetch document files in background so cache warms up
+      docRes.documentsList.forEach(doc => {
+        fetch(doc.url, { priority: 'low', cache: 'force-cache' }).catch(() => {})
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados')
     } finally {
@@ -133,6 +138,7 @@ export default function KioskPrintPage() {
     if (typeof window.__kioskLogout === 'function') {
       window.__kioskLogout()
     }
+    navigate('/', { replace: true })
   }
 
   const handleBack = () => {
@@ -276,14 +282,7 @@ export default function KioskPrintPage() {
 
                   if (mime.startsWith('image/')) {
                     return (
-                      <div className="flex justify-center bg-gray-100 rounded-xl p-4 max-h-[400px] overflow-auto">
-                        <img
-                          src={selected.url}
-                          alt={selected.name}
-                          className="max-w-full max-h-[360px] object-contain rounded-lg shadow-md"
-                          onLoad={() => setManualPages(1)}
-                        />
-                      </div>
+                      <ImagePreview src={selected.url} alt={selected.name} />
                     )
                   }
 
