@@ -7,7 +7,10 @@
     "dev": "concurrently -n front,back -c cyan,yellow \"vite\" \"node server.js\"",
     "build": "tsc && vite build",
     "start": "node server.js",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:kiosk": "concurrently -n kiosk,back -c cyan,yellow \"cd kiosk && vite\" \"cd kiosk && node server-kiosk.js\"",
+    "build:kiosk": "cd kiosk && npm run build",
+    "start:kiosk": "cd kiosk && node server-kiosk.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
