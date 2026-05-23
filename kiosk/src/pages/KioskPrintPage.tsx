@@ -5,6 +5,7 @@ import {
   Printer, FileText, LogOut, Loader2, CheckCircle, AlertCircle,
   ChevronLeft, File, Image
 } from 'lucide-react'
+import PdfPreview from '../components/PdfPreview'
 import { apiGetDocuments, apiGetCredits, apiPrint, apiCupsPrint, apiHandleShare, apiGetNotifications, BLACK_WHITE_PRICE, type StoredDocument } from '../api'
 
 type Step = 'select' | 'simulate' | 'done'
@@ -15,7 +16,9 @@ export default function KioskPrintPage() {
 
   const [docs, setDocs] = useState<StoredDocument[]>([])
   const [selected, setSelected] = useState<StoredDocument | null>(null)
-  const [pages, setPages] = useState(1)
+  const [pdfSelectedPages, setPdfSelectedPages] = useState<Set<number>>(new Set())
+  const [manualPages, setManualPages] = useState(1)
+  const [copies, setCopies] = useState(1)
   const [credits, setCredits] = useState(0)
   const [loading, setLoading] = useState(true)
   const [printing, setPrinting] = useState(false)
@@ -23,11 +26,21 @@ export default function KioskPrintPage() {
   const [success, setSuccess] = useState('')
   const [step, setStep] = useState<Step>('select')
 
+  const isPdf = selected?.mimetype === 'application/pdf'
+  const selectedPageCount = isPdf ? pdfSelectedPages.size : manualPages
+  const totalPrintedPages = selectedPageCount * copies
+  const totalCost = totalPrintedPages * BLACK_WHITE_PRICE
+  const canPrint = credits >= totalCost && totalPrintedPages > 0
+
   const userName = localStorage.getItem('pf-kiosk-name') || ''
 
   useEffect(() => {
+    if (!localStorage.getItem('pf-kiosk-credentials')) {
+      navigate('/', { replace: true })
+      return
+    }
     loadData()
-  }, [])
+  }, [navigate])
 
   useEffect(() => {
     if (docId && docs.length > 0) {
@@ -56,12 +69,11 @@ export default function KioskPrintPage() {
     }
   }
 
-  const totalCost = pages * BLACK_WHITE_PRICE
-  const canPrint = credits >= totalCost && pages > 0
-
   const handleSelect = (doc: StoredDocument) => {
     setSelected(doc)
-    setPages(1)
+    setPdfSelectedPages(new Set())
+    setManualPages(1)
+    setCopies(1)
     setSuccess('')
     setError('')
     setStep('simulate')
@@ -96,7 +108,7 @@ export default function KioskPrintPage() {
       }
 
       // 1. Debit credits via main server
-      const res = await apiPrint(docIdToPrint, docNameToPrint, pages, totalCost)
+      const res = await apiPrint(docIdToPrint, docNameToPrint, totalPrintedPages, totalCost)
       setCredits(res.credits)
 
       // 2. Send to CUPS printer
@@ -109,7 +121,7 @@ export default function KioskPrintPage() {
       }
 
       setStep('done')
-      setSuccess(`Impressão de ${pages} página(s) concluída${cupsMsg}!`)
+      setSuccess(`Impressão de ${totalPrintedPages} página(s) concluída${cupsMsg}!`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao imprimir')
     } finally {
@@ -118,9 +130,9 @@ export default function KioskPrintPage() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('pf-kiosk-credentials')
-    localStorage.removeItem('pf-kiosk-name')
-    navigate('/', { replace: true })
+    if (typeof window.__kioskLogout === 'function') {
+      window.__kioskLogout()
+    }
   }
 
   const handleBack = () => {
@@ -128,7 +140,8 @@ export default function KioskPrintPage() {
     setStep('select')
     setSuccess('')
     setError('')
-    setPages(1)
+    setPdfSelectedPages(new Set())
+    setCopies(1)
     if (docId) navigate('/print', { replace: true })
   }
 
@@ -232,28 +245,83 @@ export default function KioskPrintPage() {
             </button>
 
             <div className="bg-white border border-gray-200 rounded-2xl p-6">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-12 h-12 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
                   {getFileIcon(selected.mimetype)}
                 </div>
-                <div>
-                  <h2 className="font-heading text-xl font-bold text-gray-900">
+                <div className="min-w-0">
+                  <h2 className="font-heading text-xl font-bold text-gray-900 truncate">
                     {selected.name.replace(/^sent:/, '')}
                   </h2>
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm text-gray-400 truncate">
                     {selected.sentFromName ? `Compartilhado por ${selected.sentFromName}` : 'Documento próprio'}
                   </p>
                 </div>
               </div>
 
+              {/* File preview */}
+              <div className="mb-6">
+                {(() => {
+                  const mime = selected.mimetype || ''
+
+                  if (isPdf) {
+                    return (
+                      <PdfPreview
+                        url={selected.url}
+                        selectedPages={pdfSelectedPages}
+                        onSelectionChange={setPdfSelectedPages}
+                      />
+                    )
+                  }
+
+                  if (mime.startsWith('image/')) {
+                    return (
+                      <div className="flex justify-center bg-gray-100 rounded-xl p-4 max-h-[400px] overflow-auto">
+                        <img
+                          src={selected.url}
+                          alt={selected.name}
+                          className="max-w-full max-h-[360px] object-contain rounded-lg shadow-md"
+                          onLoad={() => setManualPages(1)}
+                        />
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div className="flex flex-col items-center justify-center bg-gray-100 rounded-xl p-8 text-gray-400">
+                      {getFileIcon(selected.mimetype)}
+                      <p className="mt-2 text-sm">Pré-visualização não disponível para este formato</p>
+                      <p className="text-xs mt-1">{selected.originalname || selected.name}</p>
+                    </div>
+                  )
+                })()}
+              </div>
+
               <div className="space-y-4 mb-6">
+                {/* For non-PDFs: manual page count input */}
+                {!isPdf && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Número de páginas do documento
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={manualPages}
+                      onChange={e => setManualPages(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-24 text-center px-3 py-3 border border-gray-300 rounded-xl text-lg font-bold focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                  </div>
+                )}
+
+                {/* Cópias */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Número de páginas
+                    Número de cópias
                   </label>
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => setPages(Math.max(1, pages - 1))}
+                      onClick={() => setCopies(Math.max(1, copies - 1))}
                       className="w-12 h-12 rounded-xl border border-gray-300 text-gray-600 text-xl font-bold hover:bg-gray-50 transition-colors"
                     >
                       -
@@ -261,12 +329,12 @@ export default function KioskPrintPage() {
                     <input
                       type="number"
                       min={1}
-                      value={pages}
-                      onChange={e => setPages(Math.max(1, parseInt(e.target.value) || 1))}
+                      value={copies}
+                      onChange={e => setCopies(Math.max(1, parseInt(e.target.value) || 1))}
                       className="w-20 text-center px-3 py-3 border border-gray-300 rounded-xl text-lg font-bold focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                     <button
-                      onClick={() => setPages(pages + 1)}
+                      onClick={() => setCopies(copies + 1)}
                       className="w-12 h-12 rounded-xl border border-gray-300 text-gray-600 text-xl font-bold hover:bg-gray-50 transition-colors"
                     >
                       +
@@ -274,6 +342,7 @@ export default function KioskPrintPage() {
                   </div>
                 </div>
 
+                {/* Resumo / Custo */}
                 <div className="bg-gray-50 rounded-xl p-4 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Configuração</span>
@@ -283,6 +352,22 @@ export default function KioskPrintPage() {
                     <span className="text-gray-500">Preço por página</span>
                     <span className="font-medium text-gray-700">R$ {BLACK_WHITE_PRICE.toFixed(2)}</span>
                   </div>
+                  {selectedPageCount > 0 && (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Páginas selecionadas</span>
+                        <span className="font-medium text-gray-700">{selectedPageCount}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Cópias</span>
+                        <span className="font-medium text-gray-700">{copies}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Total de páginas</span>
+                        <span className="font-medium text-gray-700">{totalPrintedPages}</span>
+                      </div>
+                    </>
+                  )}
                   <div className="border-t border-gray-200 pt-2 flex justify-between">
                     <span className="font-medium text-gray-800">Valor total</span>
                     <span className={`font-bold text-lg ${canPrint ? 'text-primary-600' : 'text-red-500'}`}>

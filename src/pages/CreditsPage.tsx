@@ -4,11 +4,12 @@ import { motion } from 'framer-motion'
 import { CreditCard, TrendingUp, TrendingDown, Loader2, Wallet, ExternalLink, CheckCircle } from 'lucide-react'
 import { apiGetCredits, apiCreatePaymentLink, apiCheckPayment, type Transaction } from '../api'
 
+const UNIT_PRICE = 0.50
 const plans = [
-  { amount: 5, label: 'Básico', pages: 10, unitPrice: 0.50 },
-  { amount: 10, label: 'Popular', pages: 25, unitPrice: 0.40, popular: true },
-  { amount: 20, label: 'Plus', pages: 60, unitPrice: 0.33 },
-  { amount: 50, label: 'Premium', pages: 200, unitPrice: 0.25 },
+  { amount: 5, label: 'Básico', pages: Math.floor(5 / UNIT_PRICE) },
+  { amount: 10, label: 'Popular', pages: Math.floor(10 / UNIT_PRICE), popular: true },
+  { amount: 20, label: 'Plus', pages: Math.floor(20 / UNIT_PRICE) },
+  { amount: 50, label: 'Premium', pages: Math.floor(50 / UNIT_PRICE) },
 ]
 
 export default function CreditsPage() {
@@ -155,11 +156,8 @@ export default function CreditsPage() {
               <p className="font-heading text-3xl font-bold text-primary-500 mb-2">
                 R$ {plan.amount}
               </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-                {plan.pages} páginas
-              </p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
-                R$ {plan.unitPrice.toFixed(2)}/página
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                {plan.pages} impressões
               </p>
               <button
                 onClick={() => handleBuy(plan.amount)}

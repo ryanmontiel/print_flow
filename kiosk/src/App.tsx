@@ -1,15 +1,20 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route } from 'react-router-dom'
 import KioskLoginPage from './pages/KioskLoginPage'
 import KioskPrintPage from './pages/KioskPrintPage'
 
 export default function App() {
-  const isLoggedIn = !!localStorage.getItem('pf-kiosk-credentials')
-
+  // Each page handles its own auth check
   return (
     <Routes>
-      <Route path="/" element={isLoggedIn ? <Navigate to="/print" replace /> : <KioskLoginPage />} />
-      <Route path="/print" element={isLoggedIn ? <KioskPrintPage /> : <Navigate to="/" replace />} />
-      <Route path="/print/:docId" element={isLoggedIn ? <KioskPrintPage /> : <Navigate to="/" replace />} />
+      <Route path="/" element={<KioskLoginPage />} />
+      <Route path="/print" element={<KioskPrintPage />} />
+      <Route path="/print/:docId" element={<KioskPrintPage />} />
     </Routes>
   )
+}
+
+// Global logout helper used by KioskPrintPage
+window.__kioskLogout = () => {
+  localStorage.removeItem('pf-kiosk-credentials')
+  localStorage.removeItem('pf-kiosk-name')
 }

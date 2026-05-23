@@ -60,7 +60,13 @@ export type StoredDocument = {
   sentDocId?: string
 }
 
-export const BLACK_WHITE_PRICE = 0.25
+export const BLACK_WHITE_PRICE = 0.50
+
+declare global {
+  interface Window {
+    __kioskLogout?: () => void
+  }
+}
 
 export const apiLogin = (matricula: string, senha: string) =>
   request<{ message: string; displayName: string }>('/api/login', {

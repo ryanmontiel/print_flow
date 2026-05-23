@@ -10,7 +10,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.KIOSK_PORT || 4003;
-const MAIN_SERVER = process.env.MAIN_SERVER || 'http://localhost:4002';
+const MAIN_SERVER = process.env.MAIN_SERVER || 'https://print-flow-frjf.onrender.com';
 const BIND_ADDRESS = process.env.KIOSK_BIND || '127.0.0.1';
 const CUPS_PRINTER = process.env.CUPS_PRINTER || 'printflow';
 
@@ -47,6 +47,21 @@ app.post('/api/cups-print', async (req, res) => {
   } catch (err) {
     console.error('CUPS print error:', err.message);
     res.status(500).json({ error: `Erro ao processar impressão CUPS: ${err.message}` });
+  }
+});
+
+// Proxy /uploads (PDFs, images) to the main server
+app.all('/uploads/*', async (req, res) => {
+  try {
+    const targetUrl = `${MAIN_SERVER}${req.originalUrl}`;
+    const response = await fetch(targetUrl);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.set('Content-Type', response.headers.get('content-type') || 'application/octet-stream');
+    res.set('Access-Control-Allow-Origin', '*');
+    res.send(buffer);
+  } catch (err) {
+    console.error('Kiosk uploads proxy error:', err.message);
+    res.status(502).json({ error: 'Falha ao baixar arquivo do servidor principal' });
   }
 });
 

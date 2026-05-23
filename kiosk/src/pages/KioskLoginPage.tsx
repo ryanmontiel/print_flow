@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Printer, Loader2 } from 'lucide-react'
 import { apiLogin } from '../api'
@@ -9,6 +9,13 @@ export default function KioskLoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
+
+  // If already logged in, go straight to print
+  useEffect(() => {
+    if (localStorage.getItem('pf-kiosk-credentials')) {
+      navigate('/print', { replace: true })
+    }
+  }, [navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

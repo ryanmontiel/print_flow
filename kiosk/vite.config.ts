@@ -6,8 +6,8 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      '/api': 'http://localhost:4002',
-      '/uploads': 'http://localhost:4002',
+      '/api': 'https://print-flow-frjf.onrender.com',
+      '/uploads': 'https://print-flow-frjf.onrender.com',
     },
   },
 })
