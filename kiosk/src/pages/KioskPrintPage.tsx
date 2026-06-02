@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   Printer, FileText, LogOut, Loader2, CheckCircle, AlertCircle,
-  ChevronLeft, File, Image
+  ChevronLeft, File, Image, RefreshCw
 } from 'lucide-react'
 import PdfPreview from '../components/PdfPreview'
 import ImagePreview from '../components/ImagePreview'
@@ -61,10 +61,12 @@ export default function KioskPrintPage() {
         apiGetDocuments(),
         apiGetCredits().catch(() => ({ credits: 0 })),
       ])
-      setDocs(docRes.documentsList)
+      // Show only accepted documents (filter out sent: prefixed)
+      const accepted = docRes.documentsList.filter(d => !d.name.startsWith('sent:'))
+      setDocs(accepted)
       setCredits(credRes.credits)
       // Pre-fetch document files in background so cache warms up
-      docRes.documentsList.forEach(doc => {
+      accepted.forEach(doc => {
         fetch(doc.url, { priority: 'low', cache: 'force-cache' }).catch(() => {})
       })
     } catch (err) {
@@ -198,7 +200,17 @@ export default function KioskPrintPage() {
 
         {step === 'select' && (
           <>
-            <h2 className="font-heading text-2xl font-bold text-gray-800 mb-1">Selecione um documento</h2>
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="font-heading text-2xl font-bold text-gray-800">Selecione um documento</h2>
+              <button
+                onClick={loadData}
+                disabled={loading}
+                className="p-2 text-gray-400 hover:text-primary-600 transition-colors rounded-lg hover:bg-gray-200 disabled:opacity-40"
+                title="Recarregar documentos"
+              >
+                <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
+              </button>
+            </div>
             <p className="text-gray-400 text-sm mb-4">Escolha o documento que deseja imprimir em preto e branco</p>
 
             {docs.length === 0 ? (

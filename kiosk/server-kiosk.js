@@ -4,15 +4,19 @@ import fs from 'fs';
 import os from 'os';
 import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const PORT = process.env.KIOSK_PORT || 4003;
 const MAIN_SERVER = process.env.MAIN_SERVER || 'https://print-flow-frjf.onrender.com';
 const BIND_ADDRESS = process.env.KIOSK_BIND || '127.0.0.1';
 const CUPS_PRINTER = process.env.CUPS_PRINTER || 'printflow';
+const CUPS_IPP_URL = process.env.CUPS_IPP_URL || '';
 const CACHE_DIR = path.join(__dirname, 'cache');
 
 // Ensure cache directory exists
@@ -80,7 +84,8 @@ app.post('/api/cups-print', async (req, res) => {
     fs.writeFileSync(tempFile, buffer);
 
     // Send to CUPS: B&W, single-sided
-    const cmd = `lp -d "${CUPS_PRINTER}" -o ColorModel=Gray -o sides=one-sided "${tempFile}"`;
+    const dest = CUPS_IPP_URL || CUPS_PRINTER;
+    const cmd = `lp -d "${dest}" -o ColorModel=Gray -o sides=one-sided "${tempFile}"`;
     exec(cmd, (error, stdout, stderr) => {
       try { fs.unlinkSync(tempFile); } catch {}
 
