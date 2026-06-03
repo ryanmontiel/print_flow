@@ -40,7 +40,9 @@ async function request<T>(endpoint: string, options: ApiOptions = {}): Promise<T
 }
 
 function getCredentials() {
-  const raw = sessionStorage.getItem('userCredentials') || localStorage.getItem('userCredentials')
+  let raw
+  try { raw = sessionStorage.getItem('userCredentials') } catch {}
+  if (!raw) try { raw = localStorage.getItem('userCredentials') } catch {}
   if (!raw) throw new Error('Credenciais ausentes. Faça login novamente.')
   const { matricula, senha } = JSON.parse(raw)
   return { matricula, senha }

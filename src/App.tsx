@@ -41,20 +41,24 @@ function AppRoutes() {
   const [showTutorial, setShowTutorial] = useState(false)
 
   useEffect(() => {
-    const saved = localStorage.getItem(COOKIE_KEY) as 'accepted' | 'rejected' | null
+    let saved: 'accepted' | 'rejected' | null = null
+    try { saved = localStorage.getItem(COOKIE_KEY) as 'accepted' | 'rejected' | null } catch {}
     setCookieConsent(saved)
 
     if (!user) return
 
-    const isNewReg = localStorage.getItem(NEW_REG_KEY) === 'true'
+    let isNewReg = false
+    try { isNewReg = localStorage.getItem(NEW_REG_KEY) === 'true' } catch {}
     if (isNewReg) {
-      localStorage.removeItem(NEW_REG_KEY)
+      try { localStorage.removeItem(NEW_REG_KEY) } catch {}
       setShowTutorial(true)
       return
     }
 
     if (saved === 'accepted') {
-      if (!localStorage.getItem(TUTORIAL_SEEN_KEY)) {
+      let seen = false
+      try { seen = !!localStorage.getItem(TUTORIAL_SEEN_KEY) } catch {}
+      if (!seen) {
         setShowTutorial(true)
       }
     } else {
@@ -63,18 +67,20 @@ function AppRoutes() {
   }, [user])
 
   const handleCookieAccept = useCallback(() => {
-    localStorage.setItem(COOKIE_KEY, 'accepted')
+    try { localStorage.setItem(COOKIE_KEY, 'accepted') } catch {}
     setCookieConsent('accepted')
   }, [])
 
   const handleCookieReject = useCallback(() => {
-    localStorage.setItem(COOKIE_KEY, 'rejected')
+    try { localStorage.setItem(COOKIE_KEY, 'rejected') } catch {}
     setCookieConsent('rejected')
   }, [])
 
   const handleTutorialComplete = useCallback(() => {
-    if (localStorage.getItem(COOKIE_KEY) === 'accepted') {
-      localStorage.setItem(TUTORIAL_SEEN_KEY, 'true')
+    let accepted = false
+    try { accepted = localStorage.getItem(COOKIE_KEY) === 'accepted' } catch {}
+    if (accepted) {
+      try { localStorage.setItem(TUTORIAL_SEEN_KEY, 'true') } catch {}
     }
     setShowTutorial(false)
   }, [])
