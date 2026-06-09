@@ -40,7 +40,8 @@ async function request<T>(endpoint: string, options: ApiOptions = {}): Promise<T
 }
 
 function getCredentials() {
-  const raw = localStorage.getItem('pf-kiosk-credentials')
+  let raw
+  try { raw = localStorage.getItem('pf-kiosk-credentials') } catch {}
   if (!raw) throw new Error('Credenciais ausentes. Faça login novamente.')
   return JSON.parse(raw) as { matricula: string; senha: string }
 }
