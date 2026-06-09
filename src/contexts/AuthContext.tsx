@@ -24,9 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    let stored
-    try { stored = localStorage.getItem('printflow-user') } catch {}
-    if (!stored) try { stored = sessionStorage.getItem('printflow-user') } catch {}
+    const stored = localStorage.getItem('printflow-user') || sessionStorage.getItem('printflow-user')
     if (stored) {
       try {
         const parsed = JSON.parse(stored)

@@ -14,8 +14,7 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
-    let saved
-    try { saved = localStorage.getItem('printflow-theme') } catch {}
+    const saved = localStorage.getItem('printflow-theme')
     if (saved === 'dark' || saved === 'light') return saved
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
@@ -27,7 +26,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } else {
       root.classList.remove('dark')
     }
-    try { localStorage.setItem('printflow-theme', theme) } catch {}
+    localStorage.setItem('printflow-theme', theme)
   }, [theme])
 
   const toggleTheme = () => setTheme(prev => (prev === 'light' ? 'dark' : 'light'))
