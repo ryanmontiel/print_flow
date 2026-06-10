@@ -34,14 +34,14 @@ export default function CreditsPage() {
       try {
         const res = await apiCheckPayment(order_nsu, slug, transaction_nsu)
         if (res.paid && res.amount) {
-          setPaymentSuccess(String(res.amount))
+          setPaymentSuccess(String(Math.round(res.amount / UNIT_PRICE)))
           await loadCredits()
         } else {
           // Try again after a short delay (InfinitePay API might need time)
           await new Promise(r => setTimeout(r, 3000))
           const retry = await apiCheckPayment(order_nsu, slug, transaction_nsu)
           if (retry.paid && retry.amount) {
-            setPaymentSuccess(String(retry.amount))
+            setPaymentSuccess(String(Math.round(retry.amount / UNIT_PRICE)))
             await loadCredits()
           } else {
             setError('Pagamento não confirmado. Se já pagou, aguarde alguns instantes e recarregue a página.')
@@ -102,7 +102,7 @@ export default function CreditsPage() {
         {loading ? (
           <div className="h-10 w-32 bg-white/20 rounded-lg animate-pulse" />
         ) : (
-          <p className="font-heading text-4xl font-bold">{credits} impressões</p>
+          <p className="font-heading text-4xl font-bold">{Math.round(credits / UNIT_PRICE)} impressões</p>
         )}
       </motion.div>
 
@@ -201,7 +201,7 @@ export default function CreditsPage() {
                 <span className={`text-sm font-semibold ${
                   tx.type === 'credit' ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  {tx.type === 'credit' ? '+' : '-'}{Math.abs(tx.amount)} impressões
+                  {tx.type === 'credit' ? '+' : '-'}{Math.round(Math.abs(tx.amount) / UNIT_PRICE)} impressões
                 </span>
               </div>
             ))}

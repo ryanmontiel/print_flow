@@ -50,7 +50,7 @@ export default function HomePage() {
     {
       icon: CreditCard,
       label: 'Créditos',
-      value: credits,
+      value: Math.round(credits / 0.50),
       description: 'impressões disponíveis',
       color: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
       onClick: () => navigate('/credits'),

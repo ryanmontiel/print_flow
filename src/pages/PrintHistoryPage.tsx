@@ -81,7 +81,7 @@ export default function PrintHistoryPage() {
                 <p className={`text-sm font-semibold ${
                   record.status === 'completed' ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  R$ {record.cost.toFixed(2)}
+                  {record.pages} créditos
                 </p>
                 <span className={`text-xs ${
                   record.status === 'completed'
