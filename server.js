@@ -87,6 +87,7 @@ const ADMIN_API_BASE = 'https://app.sheetlabs.com';
 const SHEET_ORG = 'PTFL';
 const NOTIFICATIONS_KEY = '__notifications__'; // stored inside the documents JSON field
 const TRANSACTIONS_KEY = '__transactions__'; // stored inside the documents JSON field
+const PRINT_HISTORY_KEY = '__printHistory__'; // stored inside the documents JSON field
 
 // Fetch all records from Admin API and find the full record for the given matricula
 const findUserSheetRecord = async (matricula) => {
@@ -579,8 +580,6 @@ app.post('/api/print', async (req, res) => {
     const sheetRecord = await findUserSheetRecord(matricula);
     const currentCredits = Number(sheetRecord?.credits ?? 0);
     if (currentCredits < (cost || 0)) return res.status(402).json({ error: 'Créditos insuficientes' });
-    let printHistory = [];
-    try { printHistory = JSON.parse(sheetRecord?.printHistory || '[]'); } catch { printHistory = []; }
     const printRecord = {
       id: Date.now().toString(),
       documentId,
@@ -590,10 +589,12 @@ app.post('/api/print', async (req, res) => {
       status: 'completed',
       printedAt: new Date().toISOString()
     };
-    printHistory.push(printRecord);
     const newBalance = currentCredits - cost;
     let documents = {};
     try { documents = JSON.parse(sheetRecord?.documents || '{}'); } catch {}
+    const printHistory = documents[PRINT_HISTORY_KEY] || [];
+    printHistory.push(printRecord);
+    documents[PRINT_HISTORY_KEY] = printHistory;
     const transactions = documents[TRANSACTIONS_KEY] || [];
     transactions.push({
       amount: -(cost || 0),
@@ -605,7 +606,7 @@ app.post('/api/print', async (req, res) => {
     const updateResponse = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}/${sheetRecord.__id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
-      body: JSON.stringify({ ...sheetRecord, credits: newBalance, documents: JSON.stringify(documents), printHistory: JSON.stringify(printHistory) })
+      body: JSON.stringify({ ...sheetRecord, credits: newBalance, documents: JSON.stringify(documents) })
     });
     if (updateResponse.status === 204 || updateResponse.status === 200) {
       return res.status(200).json({ message: 'Impressão concluída', printRecord, credits: newBalance });
@@ -624,8 +625,9 @@ app.get('/api/print-history', async (req, res) => {
     const lookup = await fetchUserRecord(matricula, senha);
     if (!lookup) return res.status(401).json({ error: 'Credenciais inválidas' });
     const sheetRecord = await findUserSheetRecord(matricula);
-    let printHistory = [];
-    try { printHistory = JSON.parse(sheetRecord?.printHistory || '[]'); } catch { printHistory = []; }
+    let documents = {};
+    try { documents = JSON.parse(sheetRecord?.documents || '{}'); } catch {}
+    const printHistory = documents[PRINT_HISTORY_KEY] || [];
     return res.status(200).json({ printHistory: printHistory.sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt)) });
   } catch (error) {
     console.error('Print history error:', error);
