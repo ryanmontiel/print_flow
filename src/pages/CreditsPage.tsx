@@ -4,7 +4,6 @@ import { motion } from 'framer-motion'
 import { CreditCard, TrendingUp, TrendingDown, Loader2, Wallet, ExternalLink, CheckCircle } from 'lucide-react'
 import { apiGetCredits, apiCreatePaymentLink, apiCheckPayment, type Transaction } from '../api'
 
-const UNIT_PRICE = 0.50
 const plans = [
   { credits: 10, label: 'Básico', price: 5 },
   { credits: 20, label: 'Popular', price: 10, popular: true },
