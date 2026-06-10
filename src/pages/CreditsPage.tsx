@@ -97,7 +97,7 @@ export default function CreditsPage() {
       >
         <div className="flex items-center gap-3 mb-2">
           <Wallet size={24} />
-          <span className="text-primary-100 text-sm font-medium">Saldo disponível</span>
+          <span className="text-primary-100 text-sm font-medium">Créditos</span>
         </div>
         {loading ? (
           <div className="h-10 w-32 bg-white/20 rounded-lg animate-pulse" />
