@@ -74,8 +74,8 @@ export default function DocumentsPage() {
 
   const filtered = documents.filter(d =>
     !d.name?.startsWith('sent:') && (
-      d.name.toLowerCase().includes(search.toLowerCase()) ||
-      d.originalname.toLowerCase().includes(search.toLowerCase())
+      d.name?.toLowerCase().includes(search.toLowerCase()) ||
+      d.originalname?.toLowerCase().includes(search.toLowerCase())
     )
   )
 
