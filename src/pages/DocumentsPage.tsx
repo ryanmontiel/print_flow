@@ -185,7 +185,7 @@ export default function DocumentsPage() {
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{doc.name}</p>
                     <p className="text-xs text-gray-400">
-                      {doc.originalname} &middot; {(doc.size / 1024).toFixed(1)} KB
+                      {doc.originalname ?? 'desconhecido'} &middot; {((doc.size ?? 0) / 1024).toFixed(1)} KB
                     </p>
                   </div>
 
