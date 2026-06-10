@@ -6,10 +6,10 @@ import { apiGetCredits, apiCreatePaymentLink, apiCheckPayment, type Transaction 
 
 const UNIT_PRICE = 0.50
 const plans = [
-  { amount: 5, label: 'Básico', pages: Math.floor(5 / UNIT_PRICE) },
-  { amount: 10, label: 'Popular', pages: Math.floor(10 / UNIT_PRICE), popular: true },
-  { amount: 20, label: 'Plus', pages: Math.floor(20 / UNIT_PRICE) },
-  { amount: 50, label: 'Premium', pages: Math.floor(50 / UNIT_PRICE) },
+  { credits: 10, label: 'Básico', price: 5 },
+  { credits: 20, label: 'Popular', price: 10, popular: true },
+  { credits: 40, label: 'Plus', price: 20 },
+  { credits: 100, label: 'Premium', price: 50 },
 ]
 
 export default function CreditsPage() {
@@ -34,14 +34,14 @@ export default function CreditsPage() {
       try {
         const res = await apiCheckPayment(order_nsu, slug, transaction_nsu)
         if (res.paid && res.amount) {
-          setPaymentSuccess(res.amount.toFixed(2))
+          setPaymentSuccess(String(res.amount))
           await loadCredits()
         } else {
           // Try again after a short delay (InfinitePay API might need time)
           await new Promise(r => setTimeout(r, 3000))
           const retry = await apiCheckPayment(order_nsu, slug, transaction_nsu)
           if (retry.paid && retry.amount) {
-            setPaymentSuccess(retry.amount.toFixed(2))
+            setPaymentSuccess(String(retry.amount))
             await loadCredits()
           } else {
             setError('Pagamento não confirmado. Se já pagou, aguarde alguns instantes e recarregue a página.')
@@ -71,14 +71,13 @@ export default function CreditsPage() {
     }
   }
 
-  const handleBuy = async (amount: number) => {
+  const handleBuy = async (price: number) => {
     setProcessingPayment(true)
     setError('')
     setPaymentSuccess(null)
     try {
       const redirectUrl = window.location.origin + '/credits'
-      const res = await apiCreatePaymentLink(amount, redirectUrl)
-      // Redirect to InfinitePay checkout
+      const res = await apiCreatePaymentLink(price, redirectUrl)
       window.location.href = res.url
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao iniciar pagamento')
@@ -103,14 +102,14 @@ export default function CreditsPage() {
         {loading ? (
           <div className="h-10 w-32 bg-white/20 rounded-lg animate-pulse" />
         ) : (
-          <p className="font-heading text-4xl font-bold">R$ {credits.toFixed(2)}</p>
+          <p className="font-heading text-4xl font-bold">{credits} créditos</p>
         )}
       </motion.div>
 
       {paymentSuccess && (
         <div className="mb-4 px-4 py-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 rounded-lg text-sm flex items-center gap-2">
           <CheckCircle size={18} />
-          Pagamento de R$ {paymentSuccess} confirmado! Créditos adicionados à sua conta.
+          Pagamento de {paymentSuccess} créditos confirmado! Créditos adicionados à sua conta.
         </div>
       )}
 
@@ -137,7 +136,7 @@ export default function CreditsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {plans.map((plan, i) => (
             <motion.div
-              key={plan.amount}
+              key={plan.credits}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 + i * 0.06 }}
@@ -153,14 +152,14 @@ export default function CreditsPage() {
                 </span>
               )}
               <h3 className="font-heading text-lg font-bold mb-1">{plan.label}</h3>
-              <p className="font-heading text-3xl font-bold text-primary-500 mb-2">
-                R$ {plan.amount}
+              <p className="font-heading text-3xl font-bold text-primary-500 mb-1">
+                {plan.credits} créditos
               </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                {plan.pages} impressões
+              <p className="text-sm text-gray-500 dark:text-gray-300 mb-4">
+                R$ {plan.price.toFixed(2)}
               </p>
               <button
-                onClick={() => handleBuy(plan.amount)}
+                onClick={() => handleBuy(plan.price)}
                 disabled={processingPayment}
                 className="w-full py-2 bg-primary-500 hover:bg-primary-600 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
               >
@@ -202,7 +201,7 @@ export default function CreditsPage() {
                 <span className={`text-sm font-semibold ${
                   tx.type === 'credit' ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  {tx.type === 'credit' ? '+' : '-'}R$ {Math.abs(tx.amount).toFixed(2)}
+                  {tx.type === 'credit' ? '+' : '-'}{Math.abs(tx.amount)} créditos
                 </span>
               </div>
             ))}

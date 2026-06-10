@@ -42,7 +42,7 @@ export default function PrintHistoryPage() {
       ) : history.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <Printer size={48} className="mx-auto mb-3 opacity-50" />
-          <p className="font-medium text-gray-500 dark:text-gray-400">Nenhuma impressão realizada</p>
+          <p className="font-medium text-gray-500 dark:text-gray-300">Nenhuma impressão realizada</p>
           <p className="text-sm mt-1">Suas impressões aparecerão aqui.</p>
         </div>
       ) : (
@@ -74,7 +74,7 @@ export default function PrintHistoryPage() {
               </div>
 
               <div className="text-right shrink-0">
-                <p className="text-sm text-gray-500 dark:text-gray-400">{record.pages} página(s)</p>
+                <p className="text-sm text-gray-500 dark:text-gray-300">{record.pages} página(s)</p>
               </div>
 
               <div className="text-right shrink-0 min-w-[80px]">

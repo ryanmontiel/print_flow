@@ -110,7 +110,7 @@ export default function LoginPage() {
           <h2 className="font-heading text-3xl font-bold text-gray-900 dark:text-white mb-1">
             {mode === 'login' ? 'Acessar' : 'Criar conta'}
           </h2>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mb-8">
+          <p className="text-gray-500 dark:text-gray-300 text-sm mb-8">
             {mode === 'login' ? 'Entre com sua matrícula e senha.' : 'Preencha os dados para se cadastrar.'}
           </p>
 
@@ -185,7 +185,7 @@ export default function LoginPage() {
                   onChange={e => setRemember(e.target.checked)}
                   className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                 />
-                <span className="text-sm text-gray-600 dark:text-gray-400">Lembrar de mim</span>
+                <span className="text-sm text-gray-600 dark:text-gray-300">Lembrar de mim</span>
               </label>
             )}
 

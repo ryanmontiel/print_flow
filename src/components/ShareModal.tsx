@@ -67,7 +67,7 @@ export default function ShareModal({ isOpen, onClose, documentName, onShare }: P
               </div>
               <div>
                 <h2 className="font-heading text-xl font-bold">Compartilhar Documento</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{documentName}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-300 truncate">{documentName}</p>
               </div>
             </div>
 

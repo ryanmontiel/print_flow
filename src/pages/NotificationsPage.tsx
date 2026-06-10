@@ -66,7 +66,7 @@ export default function NotificationsPage() {
       ) : notifications.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <Bell size={48} className="mx-auto mb-3 opacity-50" />
-          <p className="font-medium text-gray-500 dark:text-gray-400">Nenhuma notificação</p>
+          <p className="font-medium text-gray-500 dark:text-gray-300">Nenhuma notificação</p>
           <p className="text-sm mt-1">Você receberá notificações quando alguém compartilhar um documento com você.</p>
         </div>
       ) : (
@@ -110,7 +110,7 @@ export default function NotificationsPage() {
                             <FileText size={12} /> {notif.documentName}
                           </p>
                           {notif.message && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">
+                            <p className="text-xs text-gray-500 dark:text-gray-300 mt-1 italic">
                               "{notif.message}"
                             </p>
                           )}

@@ -50,11 +50,11 @@ export default function DocumentPreview({ url, mimetype, name, delay = 1500 }: P
     >
       <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center shrink-0">
         {isImage ? (
-          <Image size={20} className="text-gray-500 dark:text-gray-400" />
+          <Image size={20} className="text-gray-500 dark:text-gray-300" />
         ) : isPdf ? (
-          <FileText size={20} className="text-gray-500 dark:text-gray-400" />
+          <FileText size={20} className="text-gray-500 dark:text-gray-300" />
         ) : (
-          <File size={20} className="text-gray-500 dark:text-gray-400" />
+          <File size={20} className="text-gray-500 dark:text-gray-300" />
         )}
       </div>
 
