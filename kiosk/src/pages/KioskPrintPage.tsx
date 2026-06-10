@@ -31,7 +31,7 @@ export default function KioskPrintPage() {
   const selectedPageCount = isPdf ? pdfSelectedPages.size : manualPages
   const totalPrintedPages = selectedPageCount * copies
   const totalCost = totalPrintedPages * BLACK_WHITE_PRICE
-  const canPrint = credits >= totalCost && totalPrintedPages > 0
+  const canPrint = credits >= totalPrintedPages && totalPrintedPages > 0
 
   const userName = localStorage.getItem('pf-kiosk-name') || ''
 
@@ -177,7 +177,7 @@ export default function KioskPrintPage() {
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-500">
-            Saldo: <strong className="text-primary-600">R$ {credits.toFixed(2)}</strong>
+            Saldo: <strong className="text-primary-600">{credits} impressões</strong>
           </span>
           <span className="text-sm text-gray-400 hidden sm:inline">{userName}</span>
           <button
@@ -361,7 +361,7 @@ export default function KioskPrintPage() {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Preço por página</span>
-                    <span className="font-medium text-gray-700">R$ {BLACK_WHITE_PRICE.toFixed(2)}</span>
+                    <span className="font-medium text-gray-700">1 impressão</span>
                   </div>
                   {selectedPageCount > 0 && (
                     <>
@@ -382,16 +382,16 @@ export default function KioskPrintPage() {
                   <div className="border-t border-gray-200 pt-2 flex justify-between">
                     <span className="font-medium text-gray-800">Valor total</span>
                     <span className={`font-bold text-lg ${canPrint ? 'text-primary-600' : 'text-red-500'}`}>
-                      R$ {totalCost.toFixed(2)}
+                      {totalPrintedPages} impressões
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Saldo atual</span>
-                    <span className={`font-medium ${credits >= totalCost ? 'text-primary-600' : 'text-red-500'}`}>
-                      R$ {credits.toFixed(2)}
+                    <span className={`font-medium ${credits >= totalPrintedPages ? 'text-primary-600' : 'text-red-500'}`}>
+                      {credits} impressões
                     </span>
                   </div>
-                  {credits < totalCost && (
+                  {credits < totalPrintedPages && (
                     <div className="mt-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg text-xs flex items-center gap-1">
                       <AlertCircle size={14} />
                       Créditos insuficientes. Adicione créditos pelo site principal.
@@ -406,7 +406,7 @@ export default function KioskPrintPage() {
                 className="w-full py-4 bg-primary-600 hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-lg rounded-xl transition-colors flex items-center justify-center gap-2"
               >
                 {printing ? <Loader2 size={22} className="animate-spin" /> : <Printer size={22} />}
-                {printing ? 'Imprimindo...' : `Imprimir (R$ ${totalCost.toFixed(2)})`}
+                {printing ? 'Imprimindo...' : `Imprimir (${totalPrintedPages} impressões)`}
               </button>
             </div>
           </motion.div>
