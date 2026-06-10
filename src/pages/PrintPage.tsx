@@ -37,7 +37,7 @@ export default function PrintPage() {
   }
 
   const totalCost = pages * costPerPage
-  const canPrint = selectedDoc && credits >= totalCost && pages > 0
+  const canPrint = selectedDoc && credits >= pages && pages > 0
 
   const handlePrint = async () => {
     if (!selectedDoc || !canPrint) return
@@ -151,21 +151,21 @@ export default function PrintPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-200">Custo por página</span>
-                <span className="font-medium">R$ {costPerPage.toFixed(2)}</span>
+                <span className="font-medium">1 impressão</span>
               </div>
               <div className="border-t border-gray-200 dark:border-gray-700 pt-2 flex justify-between text-base">
                 <span className="font-bold">Total</span>
-                <span className="font-bold text-primary-500">R$ {totalCost.toFixed(2)}</span>
+                <span className="font-bold text-primary-500">{pages} impressões</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500 dark:text-gray-200">Saldo atual</span>
-                <span className={credits >= totalCost ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
-                  R$ {credits.toFixed(2)}
+                <span className={credits >= pages ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
+                  {credits} impressões
                 </span>
               </div>
             </div>
 
-            {credits < totalCost && selectedDoc && (
+            {credits < pages && selectedDoc && (
               <div className="mt-4 flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg">
                 <AlertTriangle size={16} />
                 <span>Créditos insuficientes.{' '}</span>
