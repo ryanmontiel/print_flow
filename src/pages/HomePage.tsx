@@ -51,7 +51,7 @@ export default function HomePage() {
       icon: CreditCard,
       label: 'Créditos',
       value: credits,
-      description: 'créditos disponíveis',
+      description: 'impressões disponíveis',
       color: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
       onClick: () => navigate('/credits'),
     },
@@ -81,7 +81,7 @@ export default function HomePage() {
         className="mb-8"
       >
         <h1 className="font-heading text-3xl font-bold">Olá! Bem-vindo ao PrintFlow</h1>
-        <p className="text-gray-500 dark:text-gray-300 mt-1">
+        <p className="text-gray-500 dark:text-gray-200 mt-1">
           Gerencie seus documentos, créditos e impressões em um só lugar.
         </p>
       </motion.div>
@@ -123,7 +123,7 @@ export default function HomePage() {
                 {card.onClick && <ArrowRight size={16} className="text-gray-300 dark:text-gray-600 mt-1" />}
               </div>
               <p className="text-2xl font-bold mt-3">{card.value}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-300">{card.label} &middot; {card.description}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-200">{card.label} &middot; {card.description}</p>
             </motion.div>
           ))}
         </motion.div>

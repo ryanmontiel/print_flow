@@ -81,7 +81,7 @@ export default function OnboardingModal({ onComplete }: { onComplete: () => void
               <h2 className="font-heading text-2xl font-bold mb-2">
                 {steps[currentStep].title}
               </h2>
-              <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
+              <p className="text-gray-600 dark:text-gray-200 text-sm leading-relaxed">
                 {steps[currentStep].description}
               </p>
             </div>
@@ -105,7 +105,7 @@ export default function OnboardingModal({ onComplete }: { onComplete: () => void
               <button
                 onClick={prev}
                 disabled={currentStep === 0}
-                className="flex items-center gap-1 px-3 py-2 text-sm text-gray-500 dark:text-gray-300 disabled:opacity-0 disabled:pointer-events-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                className="flex items-center gap-1 px-3 py-2 text-sm text-gray-500 dark:text-gray-200 disabled:opacity-0 disabled:pointer-events-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
               >
                 <ChevronLeft size={16} /> Anterior
               </button>

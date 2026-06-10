@@ -76,7 +76,7 @@ export default function PrintPage() {
             <CheckCircle size={36} className="text-green-600 dark:text-green-400" />
           </div>
           <h2 className="font-heading text-2xl font-bold mb-2">Impressão enviada!</h2>
-          <p className="text-gray-500 dark:text-gray-300 mb-6">
+          <p className="text-gray-500 dark:text-gray-200 mb-6">
             Seu documento foi enviado para a fila de impressão.
           </p>
           <button
@@ -142,15 +142,15 @@ export default function PrintPage() {
             <h3 className="font-heading text-lg font-bold mb-4">Resumo</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-300">Documento</span>
+                <span className="text-gray-500 dark:text-gray-200">Documento</span>
                 <span className="font-medium">{selectedDoc?.name || '—'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-300">Páginas</span>
+                <span className="text-gray-500 dark:text-gray-200">Páginas</span>
                 <span className="font-medium">{pages}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-300">Custo por página</span>
+                <span className="text-gray-500 dark:text-gray-200">Custo por página</span>
                 <span className="font-medium">R$ {costPerPage.toFixed(2)}</span>
               </div>
               <div className="border-t border-gray-200 dark:border-gray-700 pt-2 flex justify-between text-base">
@@ -158,7 +158,7 @@ export default function PrintPage() {
                 <span className="font-bold text-primary-500">R$ {totalCost.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500 dark:text-gray-300">Saldo atual</span>
+                <span className="text-gray-500 dark:text-gray-200">Saldo atual</span>
                 <span className={credits >= totalCost ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
                   R$ {credits.toFixed(2)}
                 </span>

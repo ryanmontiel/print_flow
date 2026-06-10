@@ -59,7 +59,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <h1 className="font-heading text-2xl font-bold text-primary-600 dark:text-primary-400">
             PrintFlow
           </h1>
-          <p className="text-xs text-gray-500 dark:text-gray-300 mt-1">
+          <p className="text-xs text-gray-500 dark:text-gray-200 mt-1">
             {user?.nome}
           </p>
         </div>
@@ -74,7 +74,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   isActive
                     ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
-                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    : 'text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`
               }
             >

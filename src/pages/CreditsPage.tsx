@@ -102,14 +102,14 @@ export default function CreditsPage() {
         {loading ? (
           <div className="h-10 w-32 bg-white/20 rounded-lg animate-pulse" />
         ) : (
-          <p className="font-heading text-4xl font-bold">{credits} créditos</p>
+          <p className="font-heading text-4xl font-bold">{credits} impressões</p>
         )}
       </motion.div>
 
       {paymentSuccess && (
         <div className="mb-4 px-4 py-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 rounded-lg text-sm flex items-center gap-2">
           <CheckCircle size={18} />
-          Pagamento de {paymentSuccess} créditos confirmado! Créditos adicionados à sua conta.
+          Pagamento de {paymentSuccess} impressões confirmado! Créditos adicionados à sua conta.
         </div>
       )}
 
@@ -152,11 +152,11 @@ export default function CreditsPage() {
                 </span>
               )}
               <h3 className="font-heading text-lg font-bold mb-1">{plan.label}</h3>
-              <p className="font-heading text-3xl font-bold text-primary-500 mb-1">
-                {plan.credits} créditos
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-300 mb-4">
+              <p className="font-heading text-2xl font-bold text-primary-500 mb-1">
                 R$ {plan.price.toFixed(2)}
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-200 mb-4">
+                {plan.credits} impressões
               </p>
               <button
                 onClick={() => handleBuy(plan.price)}
@@ -201,7 +201,7 @@ export default function CreditsPage() {
                 <span className={`text-sm font-semibold ${
                   tx.type === 'credit' ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  {tx.type === 'credit' ? '+' : '-'}{Math.abs(tx.amount)} créditos
+                  {tx.type === 'credit' ? '+' : '-'}{Math.abs(tx.amount)} impressões
                 </span>
               </div>
             ))}

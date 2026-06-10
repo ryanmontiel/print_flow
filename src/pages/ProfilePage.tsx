@@ -78,7 +78,7 @@ export default function ProfilePage() {
           </div>
           <div>
             <h2 className="font-heading text-xl font-bold">{user?.nome || 'Usuário'}</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-300">Matrícula: {user?.matricula || '—'}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-200">Matrícula: {user?.matricula || '—'}</p>
           </div>
         </div>
       </motion.div>
@@ -92,7 +92,7 @@ export default function ProfilePage() {
           transition={{ delay: 0.1 + gi * 0.05 }}
           className="mb-6"
         >
-          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-3 px-1">
+          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-200 uppercase tracking-wider mb-3 px-1">
             {group.title}
           </h3>
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl divide-y divide-gray-100 dark:divide-gray-700">
@@ -100,7 +100,7 @@ export default function ProfilePage() {
               <div key={ii} className="flex items-center justify-between px-5 py-4">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                    <item.icon size={18} className="text-gray-500 dark:text-gray-300" />
+                    <item.icon size={18} className="text-gray-500 dark:text-gray-200" />
                   </div>
                   <div>
                     <p className="text-sm font-medium">{item.label}</p>

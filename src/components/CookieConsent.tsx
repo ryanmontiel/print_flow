@@ -21,7 +21,7 @@ export default function CookieConsent({ onAccept, onReject }: Props) {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium mb-0.5">Este site utiliza cookies</p>
-            <p className="text-xs text-gray-500 dark:text-gray-300">
+            <p className="text-xs text-gray-500 dark:text-gray-200">
               Usamos cookies para lembrar suas preferências e melhorar sua experiência.
               Ao aceitar, o tutorial de boas-vindas será exibido apenas uma vez.
             </p>
