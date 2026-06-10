@@ -579,17 +579,18 @@ app.post('/api/print', async (req, res) => {
     if (!lookup) return res.status(401).json({ error: 'Credenciais inválidas' });
     const sheetRecord = await findUserSheetRecord(matricula);
     const currentCredits = Number(sheetRecord?.credits ?? 0);
-    if (currentCredits < (cost || 0)) return res.status(402).json({ error: 'Créditos insuficientes' });
+    const printCost = Math.round((cost || 0) / 0.50);
+    if (currentCredits < printCost) return res.status(402).json({ error: 'Créditos insuficientes' });
     const printRecord = {
       id: Date.now().toString(),
       documentId,
       documentName: documentName || 'Unknown',
       pages: pages || 1,
-      cost: cost || 0,
+      cost: printCost,
       status: 'completed',
       printedAt: new Date().toISOString()
     };
-    const newBalance = currentCredits - cost;
+    const newBalance = currentCredits - printCost;
     let documents = {};
     try { documents = JSON.parse(sheetRecord?.documents || '{}'); } catch {}
     const printHistory = documents[PRINT_HISTORY_KEY] || [];
@@ -597,7 +598,7 @@ app.post('/api/print', async (req, res) => {
     documents[PRINT_HISTORY_KEY] = printHistory;
     const transactions = documents[TRANSACTIONS_KEY] || [];
     transactions.push({
-      amount: -(cost || 0),
+      amount: -printCost,
       description: `Impressão: ${documentName || 'Documento'}`,
       type: 'debit',
       createdAt: new Date().toISOString()
@@ -827,12 +828,13 @@ const addCreditsToUser = async (matricula, amount, description) => {
   if (!sheetRecord) throw new Error(`Usuário ${matricula} não encontrado na base para adicionar créditos`);
   if (!sheetRecord.__id) throw new Error(`Registro do usuário ${matricula} está sem identificador interno (__id)`);
   const currentCredits = Number(sheetRecord.credits ?? 0);
-  const newBalance = currentCredits + Number(amount);
+  const prints = Math.round(Number(amount) / 0.50);
+  const newBalance = currentCredits + prints;
   let documents = {};
   try { documents = JSON.parse(sheetRecord.documents || '{}'); } catch {}
   const transactions = documents[TRANSACTIONS_KEY] || [];
   transactions.push({
-    amount: Number(amount),
+    amount: prints,
     description: description || 'Adição de créditos',
     type: 'credit',
     createdAt: new Date().toISOString()
@@ -914,7 +916,7 @@ app.post('/api/check-payment', async (req, res) => {
 
     // Already confirmed by webhook
     if (payment.status === 'completed') {
-      return res.status(200).json({ paid: true, amount: payment.amount });
+      return res.status(200).json({ paid: true, amount: Math.round(payment.amount / 0.50) });
     }
 
     // Consult InfinitePay API synchronously
@@ -943,7 +945,7 @@ app.post('/api/check-payment', async (req, res) => {
           payment.transaction_nsu = transaction_nsu || '';
           pending[order_nsu] = payment;
           writePendingPayments(pending);
-          return res.status(200).json({ paid: true, amount: payment.amount });
+          return res.status(200).json({ paid: true, amount: Math.round(payment.amount / 0.50) });
         }
       }
     }
