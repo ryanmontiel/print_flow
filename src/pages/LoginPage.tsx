@@ -126,7 +126,7 @@ export default function LoginPage() {
 
           <form key={mode} onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="matricula" className="block text-sm font-medium mb-1">Matrícula</label>
+              <label htmlFor="matricula" className="block text-sm font-medium mb-1 text-gray-900 dark:text-gray-200">Matrícula</label>
               <input
                 id="matricula"
                 name="matricula"
@@ -139,7 +139,7 @@ export default function LoginPage() {
 
             {mode === 'register' && (
               <div>
-                <label htmlFor="nomeCompleto" className="block text-sm font-medium mb-1">Nome Completo</label>
+                <label htmlFor="nomeCompleto" className="block text-sm font-medium mb-1 text-gray-900 dark:text-gray-200">Nome Completo</label>
                 <input
                   id="nomeCompleto"
                   name="nomeCompleto"
@@ -152,7 +152,7 @@ export default function LoginPage() {
             )}
 
             <div>
-              <label htmlFor="senha" className="block text-sm font-medium mb-1">Senha</label>
+              <label htmlFor="senha" className="block text-sm font-medium mb-1 text-gray-900 dark:text-gray-200">Senha</label>
               <input
                 id="senha"
                 name="senha"
@@ -165,7 +165,7 @@ export default function LoginPage() {
 
             {mode === 'register' && (
               <div>
-                <label htmlFor="confirmeSenha" className="block text-sm font-medium mb-1">Confirme sua senha</label>
+                <label htmlFor="confirmeSenha" className="block text-sm font-medium mb-1 text-gray-900 dark:text-gray-200">Confirme sua senha</label>
                 <input
                   id="confirmeSenha"
                   name="confirmeSenha"

@@ -210,3 +210,7 @@ export const apiGetNotifications = () => {
     params: { matricula, senha },
   })
 }
+
+// Users list for autocomplete
+export const apiGetUsers = () =>
+  request<{ users: { matricula: string; nome: string }[] }>('/api/users')

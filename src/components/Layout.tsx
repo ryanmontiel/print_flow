@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
+import { apiGetNotifications } from '../api'
 import {
   Home,
   FileText,
@@ -27,9 +28,23 @@ const navItems = [
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const loadNotifications = async () => {
+      try {
+        const res = await apiGetNotifications()
+        const pending = (res.notifications || []).filter(n => n.status === 'pending').length
+        setUnreadCount(pending)
+      } catch {}
+    }
+    loadNotifications()
+    const interval = setInterval(loadNotifications, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   const handleLogout = () => {
     logout()
@@ -78,7 +93,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 }`
               }
             >
-              <Icon size={20} />
+              <div className="relative">
+                <Icon size={20} />
+                {label === 'Notificações' && unreadCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </div>
               {label}
             </NavLink>
           ))}

@@ -249,6 +249,23 @@ app.post('/api/items', (req, res) => {
   return res.status(201).json({ id: Date.now(), ...item });
 });
 
+// List users (matricula + name) for autocomplete
+app.get('/api/users', async (req, res) => {
+  try {
+    const response = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}`, {
+      headers: { 'Authorization': getBasicAuthHeader() }
+    });
+    if (!response.ok) return res.status(502).json({ error: 'Erro ao buscar usuários' });
+    const records = await response.json();
+    if (!Array.isArray(records)) return res.status(502).json({ error: 'Resposta inválida' });
+    const users = records.map(r => ({ matricula: String(r.id), nome: r.user || String(r.id) }));
+    return res.status(200).json({ users });
+  } catch (error) {
+    console.error('List users error:', error);
+    return res.status(500).json({ error: 'Falha ao listar usuários' });
+  }
+});
+
 // Register endpoint
 app.post('/api/register', async (req, res) => {
   const { matricula, nomeCompleto, senha } = req.body;
