@@ -43,7 +43,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     }
     loadNotifications()
     const interval = setInterval(loadNotifications, 30000)
-    return () => clearInterval(interval)
+    window.addEventListener('pf-notifications-updated', loadNotifications)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('pf-notifications-updated', loadNotifications)
+    }
   }, [])
 
   const handleLogout = () => {

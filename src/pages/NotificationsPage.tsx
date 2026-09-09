@@ -31,6 +31,7 @@ export default function NotificationsPage() {
       setNotifications(prev =>
         prev.map(n => n.id === notif.id ? { ...n, status: action } : n)
       )
+      window.dispatchEvent(new Event('pf-notifications-updated'))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao processar')
     } finally {

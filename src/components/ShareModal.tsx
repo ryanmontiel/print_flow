@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Send, User } from 'lucide-react'
+import { apiGetUsers } from '../api'
 
 type Props = {
   isOpen: boolean
@@ -15,6 +16,33 @@ export default function ShareModal({ isOpen, onClose, documentName, onShare }: P
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [users, setUsers] = useState<{ matricula: string; nome: string }[]>([])
+  const [filtered, setFiltered] = useState<{ matricula: string; nome: string }[]>([])
+
+  useEffect(() => {
+    if (!isOpen) return
+    setTargetMatricula('')
+    setMessage('')
+    setError('')
+    setSuccess(false)
+    setFiltered([])
+    apiGetUsers()
+      .then(res => setUsers(res.users || []))
+      .catch(() => {})
+  }, [isOpen])
+
+  const handleMatriculaChange = (value: string) => {
+    setTargetMatricula(value)
+    if (value.length >= 2) {
+      const matches = users.filter(u =>
+        u.matricula.toLowerCase().includes(value.toLowerCase()) ||
+        u.nome.toLowerCase().includes(value.toLowerCase())
+      ).slice(0, 5)
+      setFiltered(matches)
+    } else {
+      setFiltered([])
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -80,18 +108,33 @@ export default function ShareModal({ isOpen, onClose, documentName, onShare }: P
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1 flex items-center gap-2">
+                <div className="relative">
+                  <label className="block text-sm font-medium mb-1 text-gray-900 dark:text-gray-200 flex items-center gap-2">
                     <User size={14} /> Matrícula do destinatário
                   </label>
                   <input
                     type="text"
                     value={targetMatricula}
-                    onChange={e => setTargetMatricula(e.target.value)}
+                    onChange={e => handleMatriculaChange(e.target.value)}
                     placeholder="Ex: 2024001234"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
                     autoFocus
                   />
+                  {filtered.length > 0 && (
+                    <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                      {filtered.map(u => (
+                        <button
+                          key={u.matricula}
+                          type="button"
+                          onClick={() => { setTargetMatricula(u.matricula); setFiltered([]) }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center gap-2 text-gray-900 dark:text-gray-200"
+                        >
+                          <span className="font-medium">{u.matricula}</span>
+                          <span className="text-gray-400 dark:text-gray-500 truncate">{u.nome}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div>
