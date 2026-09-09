@@ -86,7 +86,7 @@ export default function LoginPage() {
           </h1>
           <p className="text-lg lg:text-xl text-primary-100 leading-relaxed mb-8">
             Sistema de impressão automatizado do IFSul Campus Lajeado.
-            Envie seus documentos, compre créditos e imprima de qualquer lugar.
+            De qualquer lugar, envie seus documentos e compre créditos; a impressão é feita com conforto nas máquinas do câmpus, sem sair da instituição.
           </p>
 
           <div className="grid grid-cols-2 gap-4">
@@ -98,7 +98,7 @@ export default function LoginPage() {
             <div className="bg-white/10 backdrop-blur rounded-xl p-4 border border-white/10">
               <Printer size={24} className="text-primary-200 mb-2" />
               <h3 className="text-white font-semibold text-sm">Impressão</h3>
-              <p className="text-primary-200 text-xs mt-1">Imprima no campus sem sair de casa</p>
+              <p className="text-primary-200 text-xs mt-1">Imprima com conforto no câmpus, sem sair da instituição</p>
             </div>
           </div>
         </div>

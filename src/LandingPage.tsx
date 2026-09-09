@@ -127,6 +127,7 @@ export default function LandingPage({ onAuthenticate }: LandingProps) {
               Sul-Rio grandense Campus Lajeado.
             </p>
             <p>Solicite a sua impressao ou faca a recarga dos seus creditos por aqui!</p>
+            <p>Fora do campus voce pode enviar documentos e comprar creditos; a impressao e feita com conforto nas maquinas do campus, sem sair da instituicao.</p>
           </div>
 
           <div className="landing-art" aria-hidden="true">

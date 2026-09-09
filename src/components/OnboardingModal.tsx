@@ -6,7 +6,7 @@ const steps = [
   {
     icon: FileText,
     title: 'Bem-vindo ao PrintFlow!',
-    description: 'O sistema de impressão automatizado do IFSul. Envie seus documentos, compre créditos e imprima de qualquer lugar.',
+    description: 'O sistema de impressão automatizado do IFSul. De onde estiver, envie documentos e compre créditos; a impressão acontece com conforto nas máquinas do câmpus, sem sair da instituição.',
   },
   {
     icon: FileText,
