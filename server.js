@@ -362,29 +362,34 @@ app.post('/api/documents', async (req, res) => {
   }
 });
 
-// Upload file buffer to Catbox.moe CDN
-async function uploadToCatbox(fileBuffer, fileName) {
-  try {
-    const formData = new FormData();
-    const blob = new Blob([fileBuffer], { type: 'application/octet-stream' });
-    formData.append('reqtype', 'fileupload');
-    formData.append('fileToUpload', blob, fileName);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-    const response = await fetch('https://catbox.moe/user/api.php', {
-      method: 'POST',
-      body: formData,
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    const url = (await response.text()).trim();
-    if (url.startsWith('https://')) return url;
-    console.error('Catbox returned invalid URL:', url);
-    return null;
-  } catch (err) {
-    console.error('Catbox upload error:', err.message);
-    return null;
+// Upload file buffer to Catbox.moe CDN (with retry)
+async function uploadToCatbox(fileBuffer, fileName, retries = 2) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const formData = new FormData();
+      const blob = new Blob([fileBuffer], { type: 'application/octet-stream' });
+      formData.append('reqtype', 'fileupload');
+      formData.append('fileToUpload', blob, fileName);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 45000);
+      const response = await fetch('https://catbox.moe/user/api.php', {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      const url = (await response.text()).trim();
+      if (url.startsWith('https://')) {
+        console.log(`Catbox upload OK (attempt ${attempt}):`, url);
+        return url;
+      }
+      console.error(`Catbox attempt ${attempt} returned invalid URL:`, url);
+    } catch (err) {
+      console.error(`Catbox attempt ${attempt} error:`, err.message);
+    }
+    if (attempt < retries) await new Promise(r => setTimeout(r, 2000));
   }
+  return null;
 }
 
 // File upload endpoint
@@ -401,28 +406,18 @@ app.post('/api/upload', async (req, res) => {
     // Upload to Catbox CDN from the in-memory buffer
     const catboxUrl = await uploadToCatbox(req.file.buffer, req.file.originalname);
 
-    let storedFilename = req.file.filename;
-    let fileUrl = catboxUrl;
-
-    // Fallback only if Catbox fails (best-effort within this runtime instance)
     if (!catboxUrl) {
-      storedFilename = `${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-      fileUrl = `/uploads/${storedFilename}`;
-      try {
-        fs.writeFileSync(path.join(os.tmpdir(), storedFilename), req.file.buffer);
-      } catch (err) {
-        console.warn('Could not persist fallback upload:', err.message);
-      }
+      return res.status(500).json({ error: 'Falha ao enviar arquivo para armazenamento. Tente novamente.' });
     }
 
     return res.status(200).json({
       message: 'File uploaded successfully',
       file: {
-        filename: storedFilename,
+        filename: catboxUrl,
         originalname: req.file.originalname,
         mimetype: req.file.mimetype,
         size: req.file.size,
-        url: fileUrl
+        url: catboxUrl
       }
     });
   });
