@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,28 +17,25 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 const app = express();
 const port = process.env.PORT || 4002;
 
-// Ensure uploads directory exists
+// Ensure uploads directory exists. On serverless hosts (Vercel) the filesystem
+// is read-only, so this is best-effort and only used for the local fallback.
 const uploadsDir = 'uploads/';
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+} catch (err) {
+  console.log('uploads dir not writable (serverless env):', err.message);
 }
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // Save files to uploads directory
-  },
-  filename: (req, file, cb) => {
-    // Generate unique filename with original extension
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
+// Memory storage: files are forwarded to Catbox (CDN), which is the source of
+// truth for stored documents. Serverless instances do not persist disk files.
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 4 * 1024 * 1024, // 4MB limit (Vercel request body limit)
   },
   fileFilter: (req, file, cb) => {
     // Accept most image formats plus common document formats
@@ -364,11 +362,11 @@ app.post('/api/documents', async (req, res) => {
   }
 });
 
-// Upload file to Catbox.moe CDN
-async function uploadToCatbox(filePath, fileName) {
+// Upload file buffer to Catbox.moe CDN
+async function uploadToCatbox(fileBuffer, fileName) {
   try {
     const formData = new FormData();
-    const blob = new Blob([fs.readFileSync(filePath)], { type: 'application/octet-stream' });
+    const blob = new Blob([fileBuffer], { type: 'application/octet-stream' });
     formData.append('reqtype', 'fileupload');
     formData.append('fileToUpload', blob, fileName);
     const controller = new AbortController();
@@ -400,14 +398,27 @@ app.post('/api/upload', async (req, res) => {
       return res.status(400).json({ error: 'Nenhum arquivo enviado' });
     }
 
-    // Upload to Catbox CDN
-    const catboxUrl = await uploadToCatbox(req.file.path, req.file.originalname);
-    const fileUrl = catboxUrl || `/uploads/${req.file.filename}`;
+    // Upload to Catbox CDN from the in-memory buffer
+    const catboxUrl = await uploadToCatbox(req.file.buffer, req.file.originalname);
+
+    let storedFilename = req.file.filename;
+    let fileUrl = catboxUrl;
+
+    // Fallback only if Catbox fails (best-effort within this runtime instance)
+    if (!catboxUrl) {
+      storedFilename = `${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      fileUrl = `/uploads/${storedFilename}`;
+      try {
+        fs.writeFileSync(path.join(os.tmpdir(), storedFilename), req.file.buffer);
+      } catch (err) {
+        console.warn('Could not persist fallback upload:', err.message);
+      }
+    }
 
     return res.status(200).json({
       message: 'File uploaded successfully',
       file: {
-        filename: req.file.filename,
+        filename: storedFilename,
         originalname: req.file.originalname,
         mimetype: req.file.mimetype,
         size: req.file.size,
@@ -415,6 +426,23 @@ app.post('/api/upload', async (req, res) => {
       }
     });
   });
+});
+
+// Serve fallback uploads (best-effort: same runtime instance or local dev)
+app.get('/uploads/:file', (req, res) => {
+  const file = path.basename(req.params.file || '');
+  if (!file) return res.status(404).json({ error: 'Arquivo não encontrado' });
+  const candidates = [
+    path.join(os.tmpdir(), file),
+    path.join(__dirname, 'uploads', file),
+    path.join(process.cwd(), 'uploads', file),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return res.sendFile(candidate);
+    }
+  }
+  return res.status(404).json({ error: 'Arquivo não encontrado' });
 });
 
 // Add document to user endpoint
@@ -822,22 +850,46 @@ app.get('/api/notifications', async (req, res) => {
 
 const INFINITE_HANDLE = 'ryan-montiel';
 const INFINITE_API = 'https://api.checkout.infinitepay.io';
-const PENDING_DIR = path.join(__dirname, 'data');
-const PENDING_FILE = path.join(PENDING_DIR, 'pending_payments.json');
+// Pending payments live inside the user's `documents` JSON field (the data
+// folder file is not persistent on serverless hosts like Vercel).
+const PENDING_KEY = '__pendingPayments__';
 
-if (!fs.existsSync(PENDING_DIR)) {
-  fs.mkdirSync(PENDING_DIR, { recursive: true });
-}
-
-const readPendingPayments = () => {
-  try {
-    if (!fs.existsSync(PENDING_FILE)) return {};
-    return JSON.parse(fs.readFileSync(PENDING_FILE, 'utf-8'));
-  } catch { return {}; }
+const readPendingForUser = async (sheetRecord) => {
+  let documents = {};
+  try { documents = JSON.parse(sheetRecord?.documents || '{}'); } catch {}
+  return documents[PENDING_KEY] || {};
 };
 
-const writePendingPayments = (data) => {
-  fs.writeFileSync(PENDING_FILE, JSON.stringify(data, null, 2), 'utf-8');
+const writePendingForUser = async (sheetRecord, pending) => {
+  let documents = {};
+  try { documents = JSON.parse(sheetRecord?.documents || '{}'); } catch {}
+  documents[PENDING_KEY] = pending;
+  const updateResponse = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}/${sheetRecord.__id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
+    body: JSON.stringify({ ...sheetRecord, documents: JSON.stringify(documents) })
+  });
+  return updateResponse.status === 204 || updateResponse.status === 200;
+};
+
+// Webhook only knows order_nsu, so scan all user records to find the owner.
+const findPendingPaymentOwner = async (order_nsu) => {
+  try {
+    const allResponse = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}`, { headers: { 'Authorization': getBasicAuthHeader() } });
+    if (!allResponse.ok) return null;
+    const records = await safeJson(allResponse);
+    if (!Array.isArray(records)) return null;
+    for (const record of records) {
+      let documents = {};
+      try { documents = JSON.parse(record.documents || '{}'); } catch {}
+      const pending = documents[PENDING_KEY] || {};
+      if (pending[order_nsu]) return record;
+    }
+    return null;
+  } catch (error) {
+    console.error('findPendingPaymentOwner error:', error);
+    return null;
+  }
 };
 
 const addCreditsToUser = async (matricula, amount, description) => {
@@ -903,10 +955,15 @@ app.post('/api/create-payment-link', async (req, res) => {
     const data = await safeJson(response);
     if (!data?.url) return res.status(502).json({ error: 'Resposta inválida da InfinitePay' });
 
-    // Store pending payment
-    const pending = readPendingPayments();
+    // Store pending payment inside the user's Sheetlabs record
+    const sheetRecord = await findUserSheetRecord(matricula);
+    if (!sheetRecord || !sheetRecord.__id) {
+      return res.status(500).json({ error: 'Não foi possível localizar seus dados na base' });
+    }
+    const pending = await readPendingForUser(sheetRecord);
     pending[order_nsu] = { matricula, amount, status: 'pending', createdAt: new Date().toISOString() };
-    writePendingPayments(pending);
+    const saved = await writePendingForUser(sheetRecord, pending);
+    if (!saved) return res.status(502).json({ error: 'Falha ao registrar o pagamento' });
 
     return res.status(200).json({ url: data.url, order_nsu });
   } catch (error) {
@@ -926,7 +983,9 @@ app.post('/api/check-payment', async (req, res) => {
     const lookup = await fetchUserRecord(matricula, senha);
     if (!lookup) return res.status(401).json({ error: 'Credenciais inválidas' });
 
-    const pending = readPendingPayments();
+    const sheetRecord = await findUserSheetRecord(matricula);
+    if (!sheetRecord || !sheetRecord.__id) return res.status(500).json({ error: 'Não foi possível localizar seus dados na base' });
+    const pending = await readPendingForUser(sheetRecord);
     const payment = pending[order_nsu];
     if (!payment) return res.status(404).json({ error: 'Pagamento não encontrado' });
     if (payment.matricula !== matricula) return res.status(403).json({ error: 'Pagamento não pertence a este usuário' });
@@ -961,7 +1020,7 @@ app.post('/api/check-payment', async (req, res) => {
           payment.paidAt = new Date().toISOString();
           payment.transaction_nsu = transaction_nsu || '';
           pending[order_nsu] = payment;
-          writePendingPayments(pending);
+          await writePendingForUser(sheetRecord, pending);
           return res.status(200).json({ paid: true, amount: Math.round(payment.amount / 0.50) });
         }
       }
@@ -980,7 +1039,12 @@ app.post('/api/webhook-infinitepay', async (req, res) => {
     const { order_nsu, transaction_nsu, paid_amount, capture_method } = req.body;
     if (!order_nsu) return res.status(400).json({ error: 'Missing order_nsu' });
 
-    const pending = readPendingPayments();
+    const ownerRecord = await findPendingPaymentOwner(order_nsu);
+    if (!ownerRecord || !ownerRecord.__id) {
+      console.warn('Webhook received for unknown order:', order_nsu);
+      return res.status(200).json({ received: true }); // Ack anyway
+    }
+    const pending = await readPendingForUser(ownerRecord);
     const payment = pending[order_nsu];
     if (!payment) {
       console.warn('Webhook received for unknown order:', order_nsu);
@@ -1001,7 +1065,7 @@ app.post('/api/webhook-infinitepay', async (req, res) => {
     payment.transaction_nsu = transaction_nsu || '';
     payment.capture_method = capture_method || '';
     pending[order_nsu] = payment;
-    writePendingPayments(pending);
+    await writePendingForUser(ownerRecord, pending);
 
     return res.status(200).json({ received: true });
   } catch (error) {
@@ -1021,6 +1085,12 @@ if (fs.existsSync(__dist)) {
   });
 }
 
-app.listen(port, () => {
-  console.log(`Backend server listening on http://localhost:${port}`);
-});
+// Export the Express app for serverless hosts (Vercel).
+export default app;
+
+// Listen only when run directly (Vercel invokes the exported app).
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`Backend server listening on http://localhost:${port}`);
+  });
+}
