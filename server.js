@@ -344,33 +344,69 @@ app.post('/api/documents', async (req, res) => {
   }
 });
 
-// ── Upload (Catbox) ──────────────────────────────────────────────────
-async function uploadToCatbox(fileBuffer, fileName, retries = 2) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const formData = new FormData();
-      const blob = new Blob([fileBuffer], { type: 'application/octet-stream' });
+// ── Upload (external host chain) ──────────────────────────────────────
+const UPLOAD_HOSTS = [
+  {
+    name: 'uguu',
+    upload: async (formData, blob, fileName) => {
+      formData.append('files[]', blob, fileName);
+      const resp = await fetch('https://uguu.se/upload', { method: 'POST', body: formData, signal: AbortSignal.timeout(45000) });
+      if (!resp.ok) return { url: null, detail: `status ${resp.status}` };
+      const data = await safeJson(resp);
+      const url = data?.files?.[0]?.url;
+      return { url: typeof url === 'string' && url.startsWith('https://') ? url : null, detail: JSON.stringify(data).slice(0, 120) };
+    },
+  },
+  {
+    name: 'tmpfiles',
+    upload: async (formData, blob, fileName) => {
+      formData.delete('files[]');
+      formData.append('file', blob, fileName);
+      const resp = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: formData, signal: AbortSignal.timeout(45000) });
+      if (!resp.ok) return { url: null, detail: `status ${resp.status}` };
+      const data = await safeJson(resp);
+      const page = data?.data?.url;
+      if (typeof page === 'string' && page.startsWith('https://')) {
+        return { url: page.replace('https://tmpfiles.org/', 'https://tmpfiles.org/direct/'), detail: `page ${page}` };
+      }
+      return { url: null, detail: JSON.stringify(data).slice(0, 120) };
+    },
+  },
+  {
+    name: 'catbox',
+    upload: async (formData, blob, fileName) => {
+      formData.delete('file');
       formData.append('reqtype', 'fileupload');
       formData.append('fileToUpload', blob, fileName);
-      const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 45000);
-      const resp = await fetch('https://catbox.moe/user/api.php', {
-        method: 'POST',
-        body: formData,
-        signal: ctrl.signal,
-      });
-      clearTimeout(tid);
-      const url = (await resp.text()).trim();
-      if (url.startsWith('https://')) {
-        console.log(`Catbox OK (attempt ${attempt}):`, url);
-        return url;
+      const resp = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: formData, signal: AbortSignal.timeout(45000) });
+      const text = (await resp.text()).trim();
+      return { url: text.startsWith('https://') ? text : null, detail: text.slice(0, 120) };
+    },
+  },
+];
+
+async function uploadToHostChain(fileBuffer, fileName, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const errors = [];
+    for (const host of UPLOAD_HOSTS) {
+      try {
+        const formData = new FormData();
+        const blob = new Blob([fileBuffer], { type: 'application/octet-stream' });
+        const result = await host.upload(formData, blob, fileName);
+        if (result.url) {
+          console.log(`Upload OK via ${host.name} (attempt ${attempt}):`, result.url);
+          return result.url;
+        }
+        errors.push(`${host.name}: ${result.detail}`);
+        console.error(`Upload attempt ${attempt} via ${host.name} failed:`, result.detail);
+      } catch (err) {
+        errors.push(`${host.name}: ${err.message}`);
+        console.error(`Upload attempt ${attempt} via ${host.name} error:`, err.message);
       }
-      console.error(`Catbox attempt ${attempt} invalid URL:`, url);
-    } catch (err) {
-      console.error(`Catbox attempt ${attempt} error:`, err.message);
     }
     if (attempt < retries) await new Promise((r) => setTimeout(r, 2000));
   }
+  console.error('Upload failed. Details:', errors.join(' | '));
   return null;
 }
 
@@ -379,12 +415,12 @@ app.post('/api/upload', (req, res) => {
     if (error) return res.status(400).json({ error: error.message || 'File upload failed' });
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
 
-    const catboxUrl = await uploadToCatbox(req.file.buffer, req.file.originalname);
-    if (!catboxUrl) return res.status(500).json({ error: 'Falha ao enviar arquivo. Tente novamente.' });
+    const fileUrl = await uploadToHostChain(req.file.buffer, req.file.originalname);
+    if (!fileUrl) return res.status(500).json({ error: 'Falha ao enviar arquivo. Tente novamente.' });
 
     return res.status(200).json({
       message: 'File uploaded successfully',
-      file: { filename: catboxUrl, originalname: req.file.originalname, mimetype: req.file.mimetype, size: req.file.size, url: catboxUrl },
+      file: { filename: fileUrl, originalname: req.file.originalname, mimetype: req.file.mimetype, size: req.file.size, url: fileUrl },
     });
   });
 });

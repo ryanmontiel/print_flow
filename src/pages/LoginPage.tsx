@@ -184,7 +184,7 @@ export default function LoginPage() {
       await apiVerifyEmail(pendingEmail, verifyCode.trim())
       showNotice('Email verificado com sucesso!', 'success')
       const storage = remember ? localStorage : sessionStorage
-      storage.setItem('userCredentials', JSON.stringify({ email: pendingEmail, senha: '' }))
+      storage.setItem('userCredentials', JSON.stringify({ email: pendingEmail, senha: senhaValue }))
       login(pendingEmail, pendingEmail, remember)
       setTimeout(() => navigate('/home'), 500)
     } catch (err) {
