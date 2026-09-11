@@ -43,7 +43,7 @@ function getCredentials() {
   let raw
   try { raw = localStorage.getItem('pf-kiosk-credentials') } catch {}
   if (!raw) throw new Error('Credenciais ausentes. Faça login novamente.')
-  return JSON.parse(raw) as { matricula: string; senha: string }
+  return JSON.parse(raw) as { email: string; senha: string }
 }
 
 export type StoredDocument = {
@@ -55,10 +55,9 @@ export type StoredDocument = {
   size: number
   url: string
   uploadedAt: string
-  sentFromMatricula?: string
-  sentFromName?: string
-  sentMessage?: string
-  sentDocId?: string
+  compartilhado_de_email?: string
+  compartilhado_de_nome?: string
+  mensagem_compartilhamento?: string
 }
 
 export const BLACK_WHITE_PRICE = 0.50
@@ -69,32 +68,32 @@ declare global {
   }
 }
 
-export const apiLogin = (matricula: string, senha: string) =>
+export const apiLogin = (email: string, senha: string) =>
   request<{ message: string; displayName: string }>('/api/login', {
     method: 'POST',
-    body: { matricula, senha },
+    body: { email, senha },
   })
 
 export const apiGetDocuments = () => {
-  const { matricula, senha } = getCredentials()
-  return request<{ documents: Record<string, StoredDocument>; documentsList: StoredDocument[] }>('/api/documents', {
+  const { email, senha } = getCredentials()
+  return request<{ documents: StoredDocument[] }>('/api/documents', {
     method: 'POST',
-    body: { matricula, senha },
+    body: { email, senha },
   })
 }
 
 export const apiGetCredits = () => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ credits: number; transactions: unknown[] }>('/api/credits', {
-    params: { matricula, senha },
+    params: { email, senha },
   })
 }
 
 export const apiPrint = (documentId: string, documentName: string, pages: number, cost: number) => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ message: string; printRecord: { id: string }; credits: number }>('/api/print', {
     method: 'POST',
-    body: { matricula, senha, documentId, documentName, pages, cost },
+    body: { email, senha, documentId, documentName, pages, cost },
   })
 }
 
@@ -106,31 +105,31 @@ export const apiCupsPrint = (fileUrl: string) => {
 }
 
 export const apiHandleShare = (notificationId: string, action: 'accepted') => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ message: string }>('/api/handle-share', {
     method: 'POST',
-    body: { matricula, senha, notificationId, action },
+    body: { email, senha, notificationId, action },
   })
 }
 
 export type Notification = {
   id: string
-  type: string
-  fromMatricula?: string
-  fromName?: string
-  documentId?: string
-  documentName?: string
-  message?: string
+  tipo: string
+  de_email?: string
+  de_nome?: string
+  documento_id?: string
+  documento_nome?: string
+  mensagem?: string
   status: 'pending' | 'accepted' | 'rejected'
-  createdAt: string
+  criado_em: string
 }
 
 export const apiHealthCheck = () =>
   request<{ status: string }>('/api/health')
 
 export const apiGetNotifications = () => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ notifications: Notification[] }>('/api/notifications', {
-    params: { matricula, senha },
+    params: { email, senha },
   })
 }

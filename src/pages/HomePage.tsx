@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { FileText, CreditCard, Printer, ArrowRight, TrendingUp, TrendingDown, Send, X } from 'lucide-react'
-import { apiGetDocuments, apiGetCredits, apiGetPrintHistory, apiGetUsers, apiShareDocument, type StoredDocument, type Transaction } from '../api'
+import { apiGetDocuments, apiGetCredits, apiGetPrintHistory, apiGetUsers, apiShareDocument, isOwnDocument, documentDisplayName, type StoredDocument, type Transaction } from '../api'
 
 export default function HomePage() {
   const navigate = useNavigate()
@@ -14,10 +14,10 @@ export default function HomePage() {
   const [error, setError] = useState('')
   const [shareOpen, setShareOpen] = useState(false)
   const [shareDocs, setShareDocs] = useState<StoredDocument[]>([])
-  const [shareUsers, setShareUsers] = useState<{ matricula: string; nome: string }[]>([])
+  const [shareUsers, setShareUsers] = useState<{ email: string; nome: string }[]>([])
   const [shareSelectedDoc, setShareSelectedDoc] = useState('')
-  const [shareMatricula, setShareMatricula] = useState('')
-  const [shareMatriculaFiltered, setShareMatriculaFiltered] = useState<{ matricula: string; nome: string }[]>([])
+  const [shareEmail, setShareEmail] = useState('')
+  const [shareEmailFiltered, setShareEmailFiltered] = useState<{ email: string; nome: string }[]>([])
   const [shareMessage, setShareMessage] = useState('')
   const [shareLoading, setShareLoading] = useState(false)
   const [shareSuccess, setShareSuccess] = useState(false)
@@ -37,7 +37,7 @@ export default function HomePage() {
         apiGetPrintHistory(),
       ])
 
-      if (docRes.status === 'fulfilled') setDocuments(docRes.value.documentsList || [])
+      if (docRes.status === 'fulfilled') setDocuments(docRes.value.documents || [])
       else if (!credRes || credRes.status === 'rejected') setError('Erro ao carregar dados. Verifique sua conexão.')
 
       if (credRes.status === 'fulfilled') {
@@ -57,39 +57,39 @@ export default function HomePage() {
     setShareSuccess(false)
     setShareError('')
     setShareSelectedDoc('')
-    setShareMatricula('')
+    setShareEmail('')
     setShareMessage('')
     try {
       const [docsRes, usersRes] = await Promise.allSettled([apiGetDocuments(), apiGetUsers()])
-      if (docsRes.status === 'fulfilled') setShareDocs(docsRes.value.documentsList || [])
+      if (docsRes.status === 'fulfilled') setShareDocs((docsRes.value.documents || []).filter(isOwnDocument))
       if (usersRes.status === 'fulfilled') setShareUsers(usersRes.value.users || [])
     } catch {}
   }
 
-  const handleShareMatriculaChange = (value: string) => {
-    setShareMatricula(value)
+  const handleShareEmailChange = (value: string) => {
+    setShareEmail(value)
     if (value.length >= 2) {
       const filtered = shareUsers.filter(u =>
-        u.matricula.toLowerCase().includes(value.toLowerCase()) ||
+        u.email.toLowerCase().includes(value.toLowerCase()) ||
         u.nome.toLowerCase().includes(value.toLowerCase())
       ).slice(0, 5)
-      setShareMatriculaFiltered(filtered)
+      setShareEmailFiltered(filtered)
     } else {
-      setShareMatriculaFiltered([])
+      setShareEmailFiltered([])
     }
   }
 
   const handleShareSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!shareSelectedDoc || !shareMatricula.trim()) {
-      setShareError('Selecione um documento e informe a matrícula.')
+    if (!shareSelectedDoc || !shareEmail.trim()) {
+      setShareError('Selecione um documento e informe o email do destinatário.')
       return
     }
     setShareLoading(true)
     setShareError('')
     try {
       const doc = shareDocs.find(d => d.id === shareSelectedDoc)
-      await apiShareDocument(shareMatricula.trim(), shareSelectedDoc, doc?.name || '', shareMessage.trim())
+      await apiShareDocument(shareEmail.trim(), shareSelectedDoc, doc ? documentDisplayName(doc) : '', shareMessage.trim())
       setShareSuccess(true)
       setTimeout(() => setShareOpen(false), 1500)
     } catch (err) {
@@ -103,7 +103,7 @@ export default function HomePage() {
     {
       icon: FileText,
       label: 'Documentos',
-      value: documents.length,
+      value: documents.filter(isOwnDocument).length,
       description: 'arquivos enviados',
       color: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
       onClick: () => navigate('/documents'),
@@ -174,7 +174,7 @@ export default function HomePage() {
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${card.color}`}>
                   <card.icon size={22} />
                 </div>
-                {card.onClick !== undefined && <ArrowRight size={16} className="text-gray-300 dark:text-gray-600 mt-1" />}
+                {card.onClick !== undefined && <ArrowRight size={16} className="text-gray-300 dark:text-gray-400 mt-1" />}
               </div>
               <p className="text-2xl font-bold mt-3">{card.value}</p>
               <p className="text-sm text-gray-500 dark:text-gray-200">{card.label} &middot; {card.description}</p>
@@ -194,7 +194,7 @@ export default function HomePage() {
             <button onClick={() => navigate('/credits')} className="text-xs text-primary-500 hover:text-primary-600 font-medium">Ver tudo</button>
           </div>
           {transactions.length === 0 ? (
-            <p className="text-sm text-gray-400 dark:text-gray-500">Nenhuma transação ainda.</p>
+            <p className="text-sm text-gray-400 dark:text-gray-300">Nenhuma transação ainda.</p>
           ) : (
             <div className="space-y-2">
               {transactions.map(tx => (
@@ -301,31 +301,31 @@ export default function HomePage() {
                   >
                     <option value="">Selecione um documento</option>
                     {shareDocs.map(d => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
+                      <option key={d.id} value={d.id}>{documentDisplayName(d)}</option>
                     ))}
                   </select>
                 </div>
 
                 <div className="relative">
-                  <label className="block text-sm font-medium mb-1 text-gray-900 dark:text-gray-200">Matrícula do destinatário</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-900 dark:text-gray-200">Email do destinatário</label>
                   <input
-                    type="text"
-                    value={shareMatricula}
-                    onChange={e => handleShareMatriculaChange(e.target.value)}
-                    placeholder="Ex: 2024001234"
+                    type="email"
+                    value={shareEmail}
+                    onChange={e => handleShareEmailChange(e.target.value)}
+                    placeholder="aluno@email.com"
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
                     autoFocus
                   />
-                  {shareMatriculaFiltered.length > 0 && (
+                  {shareEmailFiltered.length > 0 && (
                     <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                      {shareMatriculaFiltered.map(u => (
+                      {shareEmailFiltered.map(u => (
                         <button
-                          key={u.matricula}
+                          key={u.email}
                           type="button"
-                          onClick={() => { setShareMatricula(u.matricula); setShareMatriculaFiltered([]) }}
+                          onClick={() => { setShareEmail(u.email); setShareEmailFiltered([]) }}
                           className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center gap-2 text-gray-900 dark:text-gray-200"
                         >
-                          <span className="font-medium">{u.matricula}</span>
+                          <span className="font-medium">{u.email}</span>
                           <span className="text-gray-400 dark:text-gray-500 truncate">{u.nome}</span>
                         </button>
                       ))}

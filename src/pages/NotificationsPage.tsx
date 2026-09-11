@@ -39,8 +39,8 @@ export default function NotificationsPage() {
     }
   }
 
-  const getIcon = (type: string) => {
-    switch (type) {
+  const getIcon = (tipo: string) => {
+    switch (tipo) {
       case 'share_request': return Send
       case 'share_accepted': return CheckCircle
       case 'share_rejected': return XCircle
@@ -74,7 +74,7 @@ export default function NotificationsPage() {
         <div className="space-y-3">
           <AnimatePresence>
             {notifications.map((notif, i) => {
-              const Icon = getIcon(notif.type)
+              const Icon = getIcon(notif.tipo)
               return (
                 <motion.div
                   key={notif.id}
@@ -90,29 +90,29 @@ export default function NotificationsPage() {
                 >
                   <div className="flex items-start gap-3">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
-                      notif.type === 'share_request'
+                      notif.tipo === 'share_request'
                         ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600'
                         : notif.status === 'accepted'
                         ? 'bg-green-50 dark:bg-green-900/20 text-green-600'
                         : notif.status === 'rejected'
                         ? 'bg-red-50 dark:bg-red-900/20 text-red-600'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-200'
                     }`}>
                       <Icon size={20} />
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      {notif.type === 'share_request' && (
+                      {notif.tipo === 'share_request' && (
                         <>
                           <p className="text-sm font-medium">
-                            <span className="font-bold">{notif.fromName}</span> compartilhou um documento com você
+                            <span className="font-bold">{notif.de_nome}</span> compartilhou um documento com você
                           </p>
                           <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                            <FileText size={12} /> {notif.documentName}
+                            <FileText size={12} /> {notif.documento_nome}
                           </p>
-                          {notif.message && (
+                          {notif.mensagem && (
                             <p className="text-xs text-gray-500 dark:text-gray-200 mt-1 italic">
-                              "{notif.message}"
+                              "{notif.mensagem}"
                             </p>
                           )}
                           {notif.status === 'pending' && (
@@ -148,7 +148,7 @@ export default function NotificationsPage() {
                         </>
                       )}
                       <p className="text-xs text-gray-400 mt-1">
-                        {new Date(notif.createdAt).toLocaleString('pt-BR')}
+                        {new Date(notif.criado_em).toLocaleString('pt-BR')}
                       </p>
                     </div>
                   </div>

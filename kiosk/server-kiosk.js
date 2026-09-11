@@ -35,7 +35,7 @@ async function pingMainServer() {
     await fetch(`${MAIN_SERVER}/api/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ matricula: 'keepalive', senha: 'keepalive' }),
+      body: JSON.stringify({ email: 'keepalive', senha: 'keepalive' }),
       signal: controller.signal,
     });
     clearTimeout(timeout);
@@ -58,7 +58,7 @@ app.get('/api/health', async (_req, res) => {
     await fetch(`${MAIN_SERVER}/api/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ matricula: 'warmup', senha: 'warmup' }),
+      body: JSON.stringify({ email: 'warmup', senha: 'warmup' }),
       signal: controller.signal,
     });
     clearTimeout(timeout);

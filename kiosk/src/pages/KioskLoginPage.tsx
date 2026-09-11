@@ -4,16 +4,14 @@ import { Printer, Loader2 } from 'lucide-react'
 import { apiLogin, apiHealthCheck } from '../api'
 
 export default function KioskLoginPage() {
-  const [matricula, setMatricula] = useState('')
+  const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
-  // Warm-up: ping main server to wake Render while user types credentials
   useEffect(() => { apiHealthCheck().catch(() => {}) }, [])
 
-  // If already logged in, go straight to print
   useEffect(() => {
     if (localStorage.getItem('pf-kiosk-credentials')) {
       navigate('/print', { replace: true })
@@ -23,11 +21,11 @@ export default function KioskLoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    if (!matricula || !senha) { setError('Preencha todos os campos'); return }
+    if (!email || !senha) { setError('Preencha todos os campos'); return }
     setLoading(true)
     try {
-      const res = await apiLogin(matricula, senha)
-      localStorage.setItem('pf-kiosk-credentials', JSON.stringify({ matricula, senha }))
+      const res = await apiLogin(email, senha)
+      localStorage.setItem('pf-kiosk-credentials', JSON.stringify({ email, senha }))
       localStorage.setItem('pf-kiosk-name', res.displayName)
       navigate('/print', { replace: true })
     } catch (err) {
@@ -50,12 +48,12 @@ export default function KioskLoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Matrícula</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
-              type="text"
-              value={matricula}
-              onChange={e => setMatricula(e.target.value)}
-              placeholder="Digite sua matrícula"
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="seu@email.com"
               className="w-full px-4 py-3 border border-gray-300 rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               autoFocus
             />

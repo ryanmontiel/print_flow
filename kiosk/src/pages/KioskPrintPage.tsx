@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import PdfPreview from '../components/PdfPreview'
 import ImagePreview from '../components/ImagePreview'
-import { apiGetDocuments, apiGetCredits, apiPrint, apiCupsPrint, apiHandleShare, apiGetNotifications, BLACK_WHITE_PRICE, type StoredDocument } from '../api'
+import { apiGetDocuments, apiGetCredits, apiPrint, apiCupsPrint, BLACK_WHITE_PRICE, type StoredDocument } from '../api'
 
 type Step = 'select' | 'simulate' | 'done'
 
@@ -61,8 +61,8 @@ export default function KioskPrintPage() {
         apiGetDocuments(),
         apiGetCredits().catch(() => ({ credits: 0 })),
       ])
-      // Show only accepted documents (filter out sent: prefixed)
-      const accepted = docRes.documentsList.filter(d => !d.name.startsWith('sent:'))
+      // Show all documents for the user
+      const accepted = docRes.documents
       setDocs(accepted)
       setCredits(credRes.credits)
       // Pre-fetch document files in background so cache warms up
@@ -94,25 +94,7 @@ export default function KioskPrintPage() {
 
     try {
       let docIdToPrint = selected.id
-      let docNameToPrint = selected.name.replace(/^sent:/, '')
-
-      // Auto-accept if the doc has sent: prefix
-      if (selected.name.startsWith('sent:')) {
-        const notifRes = await apiGetNotifications().catch(() => ({ notifications: [] }))
-        const pendingNotif = notifRes.notifications.find(
-          n => n.documentId === selected.id && n.status === 'pending'
-        )
-        if (pendingNotif) {
-          await apiHandleShare(pendingNotif.id, 'accepted')
-        }
-        // Reload documents to get updated name
-        const docRes = await apiGetDocuments()
-        const updated = docRes.documentsList.find(d => d.id === selected.id)
-        if (updated) {
-          docNameToPrint = updated.name.replace(/^sent:/, '')
-          setSelected(updated)
-        }
-      }
+      let docNameToPrint = selected.name
 
       // 1. Debit credits via main server
       const res = await apiPrint(docIdToPrint, docNameToPrint, totalPrintedPages, totalCost)
@@ -235,10 +217,10 @@ export default function KioskPrintPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
-                        {doc.name.replace(/^sent:/, '')}
+                        {doc.name || doc.originalname || 'Documento'}
                       </p>
                       <p className="text-xs text-gray-400 truncate">
-                        {doc.sentFromName ? `Compartilhado por ${doc.sentFromName}` : 'Documento próprio'}
+                        {doc.compartilhado_de_nome ? `Compartilhado por ${doc.compartilhado_de_nome}` : 'Documento próprio'}
                       </p>
                     </div>
                     <ChevronLeft size={20} className="text-gray-300 rotate-180 flex-shrink-0" />
@@ -269,10 +251,10 @@ export default function KioskPrintPage() {
                 </div>
                 <div className="min-w-0">
                   <h2 className="font-heading text-xl font-bold text-gray-900 truncate">
-                    {selected.name.replace(/^sent:/, '')}
+                    {selected.name || selected.originalname || 'Documento'}
                   </h2>
                   <p className="text-sm text-gray-400 truncate">
-                    {selected.sentFromName ? `Compartilhado por ${selected.sentFromName}` : 'Documento próprio'}
+                    {selected.compartilhado_de_nome ? `Compartilhado por ${selected.compartilhado_de_nome}` : 'Documento próprio'}
                   </p>
                 </div>
               </div>

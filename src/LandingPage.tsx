@@ -42,19 +42,19 @@ export default function LandingPage({ onAuthenticate }: LandingProps) {
     const form = event.currentTarget
     const formData = new FormData(form)
 
-    const matricula = String(formData.get('matricula') ?? '').trim()
+    const email = String(formData.get('email') ?? '').trim()
     const senha = String(formData.get('senha') ?? '').trim()
 
-    if (!matricula || !senha) {
-      showNotice('Por favor preencha Matricula e Senha.', 'error')
+    if (!email || !senha) {
+      showNotice('Por favor preencha Email e Senha.', 'error')
       return
     }
 
     if (mode === 'register') {
-      const nomeCompleto = String(formData.get('nomeCompleto') ?? '').trim()
+      const nome = String(formData.get('nome') ?? '').trim()
       const confirmeSenha = String(formData.get('confirmeSenha') ?? '').trim()
 
-      if (!nomeCompleto || !confirmeSenha) {
+      if (!nome || !confirmeSenha) {
         showNotice('Por favor preencha Nome Completo e Confirme sua senha.', 'error')
         return
       }
@@ -68,11 +68,10 @@ export default function LandingPage({ onAuthenticate }: LandingProps) {
         const response = await fetch('http://localhost:4002/api/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ matricula, nomeCompleto, senha })
+          body: JSON.stringify({ email, nome, senha })
         })
         if (response.ok) {
-          showNotice(`Registrado como ${nomeCompleto}`, 'success', false)
-          window.setTimeout(() => onAuthenticate(nomeCompleto), 520)
+          showNotice(`Registrado como ${nome}. Verifique seu email para o código de verificação.`, 'success', false)
         } else {
           const errorText = await response.text()
           try {
@@ -92,13 +91,13 @@ export default function LandingPage({ onAuthenticate }: LandingProps) {
       const response = await fetch('http://localhost:4002/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ matricula, senha })
+        body: JSON.stringify({ email, senha })
       })
 
       if (response.ok) {
         const result = await response.json()
-        const displayName = String(result.displayName ?? matricula)
-        localStorage.setItem('userCredentials', JSON.stringify({ matricula, senha }))
+        const displayName = String(result.displayName ?? email)
+        localStorage.setItem('userCredentials', JSON.stringify({ email, senha }))
         showNotice(`Logado como ${displayName}`, 'success', false)
         window.setTimeout(() => onAuthenticate(displayName), 520)
       } else {
@@ -194,14 +193,14 @@ export default function LandingPage({ onAuthenticate }: LandingProps) {
             onSubmit={handleSubmit}
           >
             <div className="field auth-field">
-              <label htmlFor="matricula">Matrícula</label>
-              <input id="matricula" name="matricula" type="text" required placeholder="" />
+              <label htmlFor="email">Email</label>
+              <input id="email" name="email" type="email" required placeholder="seu@email.com" />
             </div>
 
             {mode === 'register' && (
               <div className="field auth-field">
-                <label htmlFor="nomeCompleto">Nome Completo</label>
-                <input id="nomeCompleto" name="nomeCompleto" type="text" required placeholder="" />
+                <label htmlFor="nome">Nome Completo</label>
+                <input id="nome" name="nome" type="text" required placeholder="" />
               </div>
             )}
 

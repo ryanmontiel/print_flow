@@ -78,7 +78,7 @@ export default function ProfilePage() {
           </div>
           <div>
             <h2 className="font-heading text-xl font-bold">{user?.nome || 'Usuário'}</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-200">Matrícula: {user?.matricula || '—'}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-200">{user?.email || '—'}</p>
           </div>
         </div>
       </motion.div>

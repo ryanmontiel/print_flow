@@ -7,21 +7,21 @@ type Props = {
   isOpen: boolean
   onClose: () => void
   documentName: string
-  onShare: (targetMatricula: string, message: string) => Promise<void>
+  onShare: (targetEmail: string, message: string) => Promise<void>
 }
 
 export default function ShareModal({ isOpen, onClose, documentName, onShare }: Props) {
-  const [targetMatricula, setTargetMatricula] = useState('')
+  const [targetEmail, setTargetEmail] = useState('')
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
-  const [users, setUsers] = useState<{ matricula: string; nome: string }[]>([])
-  const [filtered, setFiltered] = useState<{ matricula: string; nome: string }[]>([])
+  const [users, setUsers] = useState<{ email: string; nome: string }[]>([])
+  const [filtered, setFiltered] = useState<{ email: string; nome: string }[]>([])
 
   useEffect(() => {
     if (!isOpen) return
-    setTargetMatricula('')
+    setTargetEmail('')
     setMessage('')
     setError('')
     setSuccess(false)
@@ -31,11 +31,11 @@ export default function ShareModal({ isOpen, onClose, documentName, onShare }: P
       .catch(() => {})
   }, [isOpen])
 
-  const handleMatriculaChange = (value: string) => {
-    setTargetMatricula(value)
+  const handleEmailChange = (value: string) => {
+    setTargetEmail(value)
     if (value.length >= 2) {
       const matches = users.filter(u =>
-        u.matricula.toLowerCase().includes(value.toLowerCase()) ||
+        u.email.toLowerCase().includes(value.toLowerCase()) ||
         u.nome.toLowerCase().includes(value.toLowerCase())
       ).slice(0, 5)
       setFiltered(matches)
@@ -46,19 +46,19 @@ export default function ShareModal({ isOpen, onClose, documentName, onShare }: P
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!targetMatricula.trim()) {
-      setError('Informe a matrícula do destinatário.')
+    if (!targetEmail.trim()) {
+      setError('Informe o email do destinatário.')
       return
     }
     setLoading(true)
     setError('')
     try {
-      await onShare(targetMatricula.trim(), message.trim())
+      await onShare(targetEmail.trim(), message.trim())
       setSuccess(true)
       setTimeout(() => {
         onClose()
         setSuccess(false)
-        setTargetMatricula('')
+        setTargetEmail('')
         setMessage('')
       }, 1500)
     } catch (err) {
@@ -110,13 +110,13 @@ export default function ShareModal({ isOpen, onClose, documentName, onShare }: P
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="relative">
                   <label className="block text-sm font-medium mb-1 text-gray-900 dark:text-gray-200 flex items-center gap-2">
-                    <User size={14} /> Matrícula do destinatário
+                    <User size={14} /> Email do destinatário
                   </label>
                   <input
-                    type="text"
-                    value={targetMatricula}
-                    onChange={e => handleMatriculaChange(e.target.value)}
-                    placeholder="Ex: 2024001234"
+                    type="email"
+                    value={targetEmail}
+                    onChange={e => handleEmailChange(e.target.value)}
+                    placeholder="aluno@email.com"
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
                     autoFocus
                   />
@@ -124,12 +124,12 @@ export default function ShareModal({ isOpen, onClose, documentName, onShare }: P
                     <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-40 overflow-y-auto">
                       {filtered.map(u => (
                         <button
-                          key={u.matricula}
+                          key={u.email}
                           type="button"
-                          onClick={() => { setTargetMatricula(u.matricula); setFiltered([]) }}
+                          onClick={() => { setTargetEmail(u.email); setFiltered([]) }}
                           className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center gap-2 text-gray-900 dark:text-gray-200"
                         >
-                          <span className="font-medium">{u.matricula}</span>
+                          <span className="font-medium">{u.email}</span>
                           <span className="text-gray-400 dark:text-gray-500 truncate">{u.nome}</span>
                         </button>
                       ))}

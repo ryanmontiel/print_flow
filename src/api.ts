@@ -42,8 +42,8 @@ async function request<T>(endpoint: string, options: ApiOptions = {}): Promise<T
 function getCredentials() {
   const raw = sessionStorage.getItem('userCredentials') || localStorage.getItem('userCredentials')
   if (!raw) throw new Error('Credenciais ausentes. Faça login novamente.')
-  const { matricula, senha } = JSON.parse(raw)
-  return { matricula, senha }
+  const { email, senha } = JSON.parse(raw)
+  return { email, senha }
 }
 
 export type StoredDocument = {
@@ -55,22 +55,27 @@ export type StoredDocument = {
   size: number
   url: string
   uploadedAt: string
-  sentFromMatricula?: string
-  sentFromName?: string
-  sentMessage?: string
-  sentDocId?: string
+  compartilhado_de_email?: string
+  compartilhado_de_nome?: string
+  mensagem_compartilhamento?: string
 }
+
+export const isOwnDocument = (doc: StoredDocument) =>
+  !!doc && !doc.compartilhado_de_email
+
+export const documentDisplayName = (doc: StoredDocument) =>
+  doc.name || doc.originalname || 'Documento sem nome'
 
 export type Notification = {
   id: string
-  type: 'share_request' | 'share_accepted' | 'share_rejected' | 'print_complete' | 'credits_added'
-  fromMatricula?: string
-  fromName?: string
-  documentId?: string
-  documentName?: string
-  message?: string
+  tipo: 'share_request' | 'share_accepted' | 'share_rejected' | 'print_complete' | 'credits_added'
+  de_email?: string
+  de_nome?: string
+  documento_id?: string
+  documento_nome?: string
+  mensagem?: string
   status: 'pending' | 'accepted' | 'rejected' | 'read'
-  createdAt: string
+  criado_em: string
 }
 
 export type PrintRecord = {
@@ -91,24 +96,36 @@ export type Transaction = {
 }
 
 // Auth
-export const apiLogin = (matricula: string, senha: string) =>
+export const apiLogin = (email: string, senha: string) =>
   request<{ message: string; displayName: string }>('/api/login', {
     method: 'POST',
-    body: { matricula, senha },
+    body: { email, senha },
   })
 
-export const apiRegister = (matricula: string, nomeCompleto: string, senha: string) =>
+export const apiRegister = (email: string, nome: string, senha: string) =>
   request<{ message: string }>('/api/register', {
     method: 'POST',
-    body: { matricula, nomeCompleto, senha },
+    body: { email, nome, senha },
+  })
+
+export const apiVerifyEmail = (email: string, codigo: string) =>
+  request<{ message: string }>('/api/verify-email', {
+    method: 'POST',
+    body: { email, codigo },
+  })
+
+export const apiResendCode = (email: string) =>
+  request<{ message: string }>('/api/resend-code', {
+    method: 'POST',
+    body: { email },
   })
 
 // Documents
 export const apiGetDocuments = () => {
-  const { matricula, senha } = getCredentials()
-  return request<{ documents: Record<string, StoredDocument>; documentsList: StoredDocument[] }>('/api/documents', {
+  const { email, senha } = getCredentials()
+  return request<{ documents: StoredDocument[] }>('/api/documents', {
     method: 'POST',
-    body: { matricula, senha },
+    body: { email, senha },
   })
 }
 
@@ -122,95 +139,95 @@ export const apiUploadFile = (file: File) => {
 }
 
 export const apiAddDocument = (documentName: string, uploadedFile: StoredDocument) => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ message: string; document: StoredDocument }>('/api/add-document', {
     method: 'POST',
-    body: { matricula, senha, documentName, ...uploadedFile },
+    body: { email, senha, documentName, ...uploadedFile },
   })
 }
 
 export const apiDeleteDocument = (documentId: string) => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ message: string }>('/api/delete-document', {
     method: 'POST',
-    body: { matricula, senha, documentId },
+    body: { email, senha, documentId },
   })
 }
 
 // Credits
 export const apiGetCredits = () => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ credits: number; transactions: Transaction[] }>('/api/credits', {
-    params: { matricula, senha },
+    params: { email, senha },
   })
 }
 
 export const apiAddCredits = (amount: number, description?: string) => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ credits: number; transactions: Transaction[] }>('/api/credits/add', {
     method: 'POST',
-    body: { matricula, senha, amount, description },
+    body: { email, senha, amount, description },
   })
 }
 
 // Print
 export const apiPrint = (documentId: string, documentName: string, pages: number, cost: number) => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ message: string; printRecord: PrintRecord; credits: number }>('/api/print', {
     method: 'POST',
-    body: { matricula, senha, documentId, documentName, pages, cost },
+    body: { email, senha, documentId, documentName, pages, cost },
   })
 }
 
 export const apiGetPrintHistory = () => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ printHistory: PrintRecord[] }>('/api/print-history', {
-    params: { matricula, senha },
+    params: { email, senha },
   })
 }
 
 // Share
-export const apiShareDocument = (targetMatricula: string, documentId: string, documentName: string, message?: string) => {
-  const { matricula, senha } = getCredentials()
+export const apiShareDocument = (targetEmail: string, documentId: string, documentName: string, message?: string) => {
+  const { email, senha } = getCredentials()
   return request<{ message: string }>('/api/share-document', {
     method: 'POST',
-    body: { matricula, senha, targetMatricula, documentId, documentName, message },
+    body: { email, senha, targetEmail, documentId, documentName, message },
   })
 }
 
 export const apiHandleShare = (notificationId: string, action: 'accepted' | 'rejected') => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ message: string }>('/api/handle-share', {
     method: 'POST',
-    body: { matricula, senha, notificationId, action },
+    body: { email, senha, notificationId, action },
   })
 }
 
 // InfinitePay
 export const apiCreatePaymentLink = (amount: number, redirectUrl: string) => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ url: string; order_nsu: string }>('/api/create-payment-link', {
     method: 'POST',
-    body: { matricula, senha, amount, redirect_url: redirectUrl },
+    body: { email, senha, amount, redirect_url: redirectUrl },
   })
 }
 
 export const apiCheckPayment = (order_nsu: string, slug?: string, transaction_nsu?: string) => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ paid: boolean; amount?: number }>('/api/check-payment', {
     method: 'POST',
-    body: { matricula, senha, order_nsu, slug, transaction_nsu },
+    body: { email, senha, order_nsu, slug, transaction_nsu },
   })
 }
 
 // Notifications
 export const apiGetNotifications = () => {
-  const { matricula, senha } = getCredentials()
+  const { email, senha } = getCredentials()
   return request<{ notifications: Notification[] }>('/api/notifications', {
-    params: { matricula, senha },
+    params: { email, senha },
   })
 }
 
 // Users list for autocomplete
 export const apiGetUsers = () =>
-  request<{ users: { matricula: string; nome: string }[] }>('/api/users')
+  request<{ users: { email: string; nome: string }[] }>('/api/users')

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, Search, Trash2, ExternalLink, Download, Share2, FileText, Loader2 } from 'lucide-react'
-import { apiGetDocuments, apiUploadFile, apiAddDocument, apiDeleteDocument, apiShareDocument, type StoredDocument } from '../api'
+import { apiGetDocuments, apiUploadFile, apiAddDocument, apiDeleteDocument, apiShareDocument, isOwnDocument, documentDisplayName, type StoredDocument } from '../api'
 import ShareModal from '../components/ShareModal'
 import DocumentPreview from '../components/DocumentPreview'
 
@@ -24,7 +24,7 @@ export default function DocumentsPage() {
     setError('')
     try {
       const res = await apiGetDocuments()
-      setDocuments(res.documentsList || [])
+      setDocuments(res.documents || [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar documentos')
     } finally {
@@ -72,11 +72,11 @@ export default function DocumentsPage() {
     }
   }
 
-  const filtered = documents.filter(d =>
-    !d.name?.startsWith('sent:') && (
-      d.name?.toLowerCase().includes(search.toLowerCase()) ||
-      d.originalname?.toLowerCase().includes(search.toLowerCase())
-    )
+  const ownDocuments = documents.filter(isOwnDocument)
+
+  const filtered = ownDocuments.filter(d =>
+    documentDisplayName(d).toLowerCase().includes(search.toLowerCase()) ||
+    (d.originalname || '').toLowerCase().includes(search.toLowerCase())
   )
 
   return (
@@ -85,7 +85,7 @@ export default function DocumentsPage() {
         <div>
           <h1 className="font-heading text-3xl font-bold">Documentos</h1>
           <p className="text-gray-500 dark:text-gray-200 text-sm mt-1">
-            {documents.length} documento(s) enviado(s)
+            {ownDocuments.length} documento(s) enviado(s)
           </p>
         </div>
 
@@ -180,10 +180,10 @@ export default function DocumentsPage() {
                   exit={{ opacity: 0, y: -10, height: 0 }}
                   className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 flex items-center gap-4"
                 >
-                  <DocumentPreview url={fileUrl} mimetype={doc.mimetype} name={doc.name} />
+                  <DocumentPreview url={fileUrl} mimetype={doc.mimetype} name={documentDisplayName(doc)} />
 
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{doc.name}</p>
+                    <p className="font-medium truncate">{documentDisplayName(doc)}</p>
                     <p className="text-xs text-gray-400">
                       {doc.originalname ?? 'desconhecido'} &middot; {((doc.size ?? 0) / 1024).toFixed(1)} KB
                     </p>
@@ -228,8 +228,8 @@ export default function DocumentsPage() {
           isOpen={!!shareDoc}
           onClose={() => setShareDoc(null)}
           documentName={shareDoc.name}
-          onShare={async (targetMatricula, message) => {
-            await apiShareDocument(targetMatricula, shareDoc.id, shareDoc.name, message)
+          onShare={async (targetEmail, message) => {
+            await apiShareDocument(targetEmail, shareDoc.id, shareDoc.name, message)
           }}
         />
       )}

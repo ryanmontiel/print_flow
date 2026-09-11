@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Printer, FileText, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react'
-import { apiGetDocuments, apiGetCredits, apiPrint, type StoredDocument } from '../api'
+import { apiGetDocuments, apiGetCredits, apiPrint, isOwnDocument, documentDisplayName, type StoredDocument } from '../api'
 import { useNavigate } from 'react-router-dom'
 
 export default function PrintPage() {
@@ -24,10 +24,10 @@ export default function PrintPage() {
     setLoading(true)
     try {
       const [docRes, credRes] = await Promise.all([
-        apiGetDocuments().catch(() => ({ documentsList: [] as StoredDocument[] })),
+        apiGetDocuments().catch(() => ({ documents: [] as StoredDocument[] })),
         apiGetCredits().catch(() => ({ credits: 0 })),
       ])
-      setDocuments(docRes.documentsList || [])
+      setDocuments(docRes.documents || [])
       setCredits(credRes.credits)
     } catch {
       setError('Erro ao carregar dados.')
@@ -38,6 +38,7 @@ export default function PrintPage() {
 
   const totalCost = pages * costPerPage
   const canPrint = selectedDoc && credits >= pages && pages > 0
+  const ownDocuments = documents.filter(isOwnDocument)
 
   const handlePrint = async () => {
     if (!selectedDoc || !canPrint) return
@@ -99,7 +100,7 @@ export default function PrintPage() {
             </label>
             {loading ? (
               <div className="h-10 bg-gray-100 dark:bg-gray-700 rounded-lg animate-pulse" />
-            ) : documents.length === 0 ? (
+            ) : ownDocuments.length === 0 ? (
               <p className="text-sm text-gray-400">
                 Nenhum documento disponível.{' '}
                 <button onClick={() => navigate('/documents')} className="text-primary-500 hover:underline">
@@ -116,8 +117,8 @@ export default function PrintPage() {
                 className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-primary-500 outline-none"
               >
                 <option value="">-- Selecione --</option>
-                {documents.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
+                {ownDocuments.map(d => (
+                  <option key={d.id} value={d.id}>{documentDisplayName(d)}</option>
                 ))}
               </select>
             )}
@@ -143,7 +144,7 @@ export default function PrintPage() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-200">Documento</span>
-                <span className="font-medium">{selectedDoc?.name || '—'}</span>
+                <span className="font-medium">{selectedDoc ? documentDisplayName(selectedDoc) : '—'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-200">Páginas</span>

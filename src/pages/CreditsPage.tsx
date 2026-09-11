@@ -101,7 +101,7 @@ export default function CreditsPage() {
         {loading ? (
           <div className="h-10 w-32 bg-white/20 rounded-lg animate-pulse" />
         ) : (
-          <p className="font-heading text-4xl font-bold">{credits} impressões</p>
+          <p className="text-4xl font-bold tabular-nums tracking-tight">{credits} impressões</p>
         )}
       </motion.div>
 
@@ -151,7 +151,7 @@ export default function CreditsPage() {
                 </span>
               )}
               <h3 className="font-heading text-lg font-bold mb-1">{plan.label}</h3>
-              <p className="font-heading text-2xl font-bold text-primary-500 mb-1">
+              <p className="text-2xl font-bold text-primary-500 mb-1 tabular-nums">
                 R$ {plan.price.toFixed(2)}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-200 mb-4">

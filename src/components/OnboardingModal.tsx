@@ -112,7 +112,7 @@ export default function OnboardingModal({ onComplete }: { onComplete: () => void
 
               <button
                 onClick={handleClose}
-                className="text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                className="text-sm text-gray-400 hover:text-gray-600 dark:text-gray-300 dark:hover:text-gray-100 transition-colors"
               >
                 Pular tour
               </button>

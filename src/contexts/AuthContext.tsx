@@ -1,13 +1,13 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 
 type User = {
-  matricula: string
+  email: string
   nome: string
 }
 
 type AuthContextType = {
   user: User | null
-  login: (matricula: string, nome: string, remember?: boolean) => void
+  login: (email: string, nome: string, remember?: boolean) => void
   logout: () => void
   isLoading: boolean
 }
@@ -34,8 +34,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false)
   }, [])
 
-  const login = (matricula: string, nome: string, remember: boolean = false) => {
-    const u = { matricula, nome }
+  const login = (email: string, nome: string, remember: boolean = false) => {
+    const u = { email, nome }
     const storage = remember ? localStorage : sessionStorage
     storage.setItem('printflow-user', JSON.stringify(u))
     setUser(u)
