@@ -13,7 +13,7 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const PORT = process.env.KIOSK_PORT || 4003;
-const MAIN_SERVER = process.env.MAIN_SERVER || 'https://print-flow-frjf.onrender.com';
+const MAIN_SERVER = process.env.MAIN_SERVER || 'https://tcc-printflow.vercel.app';
 const BIND_ADDRESS = process.env.KIOSK_BIND || '127.0.0.1';
 const CUPS_PRINTER = process.env.CUPS_PRINTER || 'printflow';
 const CUPS_IPP_URL = process.env.CUPS_IPP_URL || '';
