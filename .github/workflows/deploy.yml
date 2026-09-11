@@ -18,3 +18,10 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: npx -y vercel@latest --prod --yes --project tcc-printflow
+
+      - name: Point production alias to the new deployment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          DEPLOYMENT_ID=$(curl -s "https://api.vercel.com/v6/deployments?projectId=prj_TxHwf59d5j6ebPKJCihqltQtHYsG&limit=1&target=production" -H "Authorization: Bearer $VERCEL_TOKEN" | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const j=JSON.parse(s);const d=j.deployments.find(x=>x.readyState==='READY');if(d)console.log(d.uid);else process.exit(1)})")
+          curl -s -X POST -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" -d "{\"alias\":\"tcc-printflow.vercel.app\"}" "https://api.vercel.com/v13/deployments/$DEPLOYMENT_ID/aliases"
