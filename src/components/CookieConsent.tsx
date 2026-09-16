@@ -20,7 +20,7 @@ export default function CookieConsent({ onAccept, onReject }: Props) {
             <Cookie size={20} className="text-primary-600 dark:text-primary-400" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium mb-0.5">Este site utiliza cookies</p>
+            <p className="text-sm font-medium mb-0.5 text-gray-900 dark:text-gray-100">Este site utiliza cookies</p>
             <p className="text-xs text-gray-500 dark:text-gray-200">
               Usamos cookies para lembrar suas preferências e melhorar sua experiência.
               Ao aceitar, o tutorial de boas-vindas será exibido apenas uma vez.
@@ -29,7 +29,7 @@ export default function CookieConsent({ onAccept, onReject }: Props) {
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={onReject}
-              className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1.5"
+              className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1.5"
             >
               <X size={14} /> Recusar
             </button>

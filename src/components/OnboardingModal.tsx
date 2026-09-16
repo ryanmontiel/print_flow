@@ -68,7 +68,7 @@ export default function OnboardingModal({ onComplete }: { onComplete: () => void
           >
             <button
               onClick={handleClose}
-              className="absolute top-4 right-4 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="absolute top-4 right-4 p-1 rounded-lg text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-100"
             >
               <X size={20} />
             </button>
@@ -78,7 +78,7 @@ export default function OnboardingModal({ onComplete }: { onComplete: () => void
                 <StepIcon size={32} className="text-primary-600 dark:text-primary-400" />
               </div>
 
-              <h2 className="font-heading text-2xl font-bold mb-2">
+              <h2 className="font-heading text-2xl font-bold mb-2 text-gray-900 dark:text-gray-100">
                 {steps[currentStep].title}
               </h2>
               <p className="text-gray-600 dark:text-gray-200 text-sm leading-relaxed">
