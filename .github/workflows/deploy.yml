@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: deploy-${{ github.sha }}
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -23,5 +27,13 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          DEPLOYMENT_ID=$(curl -s "https://api.vercel.com/v6/deployments?projectId=prj_TxHwf59d5j6ebPKJCihqltQtHYsG&limit=1&target=production" -H "Authorization: Bearer $VERCEL_TOKEN" | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const j=JSON.parse(s);const d=j.deployments.find(x=>x.readyState==='READY');if(d)console.log(d.uid);else process.exit(1)})")
-          curl -s -X POST -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" -d "{\"alias\":\"tcc-printflow.vercel.app\"}" "https://api.vercel.com/v13/deployments/$DEPLOYMENT_ID/aliases"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            DEPLOYMENT_ID=$(curl -s "https://api.vercel.com/v6/deployments?projectId=prj_TxHwf59d5j6ebPKJCihqltQtHYsG&limit=5&target=production" -H "Authorization: Bearer $VERCEL_TOKEN" | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const j=JSON.parse(s);const d=(j.deployments||[]).find(x=>x.readyState==='READY');process.stdout.write(d?d.uid:'')})")
+            if [ -z "$DEPLOYMENT_ID" ]; then echo "no READY deployment yet, retry $i/10"; sleep 5; continue; fi
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" -d "{\"alias\":\"tcc-printflow.vercel.app\"}" "https://api.vercel.com/v13/deployments/$DEPLOYMENT_ID/aliases")
+            echo "assigned $DEPLOYMENT_ID -> tcc-printflow.vercel.app (HTTP $CODE)"
+            if [ "$CODE" = "200" ]; then exit 0; fi
+            sleep 5
+          done
+          echo "could not assign the production alias after retries"
+          exit 1
