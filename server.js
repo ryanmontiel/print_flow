@@ -502,7 +502,7 @@ app.post('/api/blob/multipart/complete', async (req, res) => {
     return res.json({ url: blob?.url, pathname: blob?.pathname, size: blob?.size });
   } catch (err) {
     console.error('Blob multipart complete error:', err);
-    return res.status(500).json({ error: 'Falha ao finalizar envio' });
+    return res.status(500).json({ error: 'Falha ao finalizar envio', detail: String(err?.message || err) });
   }
 });
 
