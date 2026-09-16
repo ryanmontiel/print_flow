@@ -1,4 +1,5 @@
 const API = ''
+import { upload } from '@vercel/blob/client'
 
 type ApiOptions = {
   method?: string
@@ -130,11 +131,29 @@ export const apiGetDocuments = () => {
 }
 
 export const apiUploadFile = async (file: File) => {
-  if (file.size > 50 * 1024 * 1024) {
-    throw new Error('Arquivo muito grande. O limite é 50 MB.')
-  }
-  const { email, senha } = getCredentials()
-  if (file.size <= 4 * 1024 * 1024) {
+  try {
+    const blob = await upload(file.name, file, {
+      access: 'public',
+      handleUploadUrl: `${API}/api/blob/upload`,
+      clientPayload: JSON.stringify(getCredentials()),
+      contentType: file.type || 'application/octet-stream',
+    })
+    return {
+      message: 'File uploaded successfully',
+      file: {
+        filename: blob.pathname,
+        url: blob.url,
+        originalname: file.name,
+        mimetype: file.type || 'application/octet-stream',
+        size: file.size,
+      } as StoredDocument,
+    }
+  } catch (error) {
+    if (file.size > 4 * 1024 * 1024) {
+      throw new Error(
+        `Não foi possível enviar o arquivo (${Math.ceil(file.size / 1024 / 1024)} MB) pelo armazenamento em nuvem. Tente novamente.`
+      )
+    }
     const formData = new FormData()
     formData.append('file', file)
     const res = await fetch(`${API}/api/upload`, { method: 'POST', body: formData })
@@ -151,59 +170,6 @@ export const apiUploadFile = async (file: File) => {
       throw new Error(message)
     }
     return res.json() as Promise<{ message: string; file: StoredDocument }>
-  }
-
-  // Arquivos grandes: upload em partes via nosso servidor (relay → Vercel Blob)
-  const contentType = file.type || 'application/octet-stream'
-  const start = await request<{ uploadId: string; key: string; pathname: string }>('/api/blob/multipart/start', {
-    method: 'POST',
-    body: { email, senha, name: file.name, contentType, size: file.size },
-  })
-  const parts: { partNumber: number; etag: string }[] = []
-  const chunkSize = 3 * 1024 * 1024
-  const total = Math.ceil(file.size / chunkSize)
-  for (let i = 0; i < total; i++) {
-    const partNumber = i + 1
-    const chunk = file.slice(i * chunkSize, Math.min((i + 1) * chunkSize, file.size))
-    const formData = new FormData()
-    formData.append('file', chunk, `part-${partNumber}`)
-    formData.append('email', email)
-    formData.append('senha', senha)
-    formData.append('uploadId', start.uploadId)
-    formData.append('key', start.key)
-    formData.append('pathname', start.pathname)
-    formData.append('partNumber', String(partNumber))
-    formData.append('contentType', contentType)
-    const res = await fetch(`${API}/api/blob/multipart/part`, { method: 'POST', body: formData })
-    const text = await res.text()
-    if (!res.ok) {
-      let message = 'Erro ao enviar parte do arquivo. Tente novamente.'
-      try {
-        const data = JSON.parse(text)
-        if (data?.error) message = data.error
-      } catch {}
-      throw new Error(message)
-    }
-    let part = null
-    try {
-      part = JSON.parse(text)
-    } catch {}
-    if (!part?.etag) throw new Error('Resposta inválida ao enviar parte.')
-    parts.push({ partNumber, etag: part.etag })
-  }
-  const done = await request<{ url: string; pathname: string; size?: number }>('/api/blob/multipart/complete', {
-    method: 'POST',
-    body: { email, senha, uploadId: start.uploadId, key: start.key, pathname: start.pathname, parts, contentType },
-  })
-  return {
-    message: 'File uploaded successfully',
-    file: {
-      filename: done.pathname,
-      url: done.url,
-      originalname: file.name,
-      mimetype: contentType,
-      size: file.size,
-    } as StoredDocument,
   }
 }
 
