@@ -358,24 +358,8 @@ const UPLOAD_HOSTS = [
     },
   },
   {
-    name: 'tmpfiles',
-    upload: async (formData, blob, fileName) => {
-      formData.delete('files[]');
-      formData.append('file', blob, fileName);
-      const resp = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: formData, signal: AbortSignal.timeout(45000) });
-      if (!resp.ok) return { url: null, detail: `status ${resp.status}` };
-      const data = await safeJson(resp);
-      const page = data?.data?.url;
-      if (typeof page === 'string' && page.startsWith('https://')) {
-        return { url: page.replace('https://tmpfiles.org/', 'https://tmpfiles.org/direct/'), detail: `page ${page}` };
-      }
-      return { url: null, detail: JSON.stringify(data).slice(0, 120) };
-    },
-  },
-  {
     name: 'catbox',
     upload: async (formData, blob, fileName) => {
-      formData.delete('file');
       formData.append('reqtype', 'fileupload');
       formData.append('fileToUpload', blob, fileName);
       const resp = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: formData, signal: AbortSignal.timeout(45000) });

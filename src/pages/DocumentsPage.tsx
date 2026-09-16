@@ -73,11 +73,72 @@ export default function DocumentsPage() {
   }
 
   const ownDocuments = documents.filter(isOwnDocument)
+  const sharedDocuments = documents.filter(doc => !isOwnDocument(doc))
 
-  const filtered = ownDocuments.filter(d =>
-    documentDisplayName(d).toLowerCase().includes(search.toLowerCase()) ||
-    (d.originalname || '').toLowerCase().includes(search.toLowerCase())
-  )
+  const matches = (doc: StoredDocument) =>
+    documentDisplayName(doc).toLowerCase().includes(search.toLowerCase()) ||
+    (doc.originalname || '').toLowerCase().includes(search.toLowerCase())
+
+  const filteredOwn = ownDocuments.filter(matches)
+  const filteredShared = sharedDocuments.filter(matches)
+
+  const renderDocRow = (doc: StoredDocument, isShared = false) => {
+    const fileUrl = doc.url
+    return (
+      <motion.div
+        key={doc.id}
+        layout
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -10, height: 0 }}
+        className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 flex items-center gap-4"
+      >
+        <DocumentPreview url={fileUrl} mimetype={doc.mimetype} name={documentDisplayName(doc)} />
+
+        <div className="flex-1 min-w-0">
+          <p className="font-medium truncate">{documentDisplayName(doc)}</p>
+          <p className="text-xs text-gray-400">
+            {doc.originalname ?? 'desconhecido'} &middot; {((doc.size ?? 0) / 1024).toFixed(1)} KB
+          </p>
+          {isShared && doc.compartilhado_de_email && (
+            <p className="text-xs text-primary-600 dark:text-primary-400 mt-0.5 flex items-center gap-1">
+              <Share2 size={11} /> Compartilhado por {doc.compartilhado_de_nome || doc.compartilhado_de_email}
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          <a href={fileUrl} target="_blank" rel="noreferrer"
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-200 hover:text-primary-500 transition-colors"
+            title="Abrir">
+            <ExternalLink size={16} />
+          </a>
+          <a href={fileUrl} download={doc.originalname}
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-200 hover:text-primary-500 transition-colors"
+            title="Baixar">
+            <Download size={16} />
+          </a>
+          {!isShared && (
+            <button
+              onClick={() => setShareDoc(doc)}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-200 hover:text-primary-500 transition-colors"
+              title="Compartilhar"
+            >
+              <Share2 size={16} />
+            </button>
+          )}
+          <button
+            onClick={() => handleDelete(doc.id)}
+            disabled={deletingId === doc.id}
+            className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-500 dark:text-gray-200 hover:text-red-500 transition-colors disabled:opacity-50"
+            title="Excluir"
+          >
+            {deletingId === doc.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+          </button>
+        </div>
+      </motion.div>
+    )
+  }
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -160,67 +221,41 @@ export default function DocumentsPage() {
             <div key={i} className="h-20 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : documents.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <FileText size={48} className="mx-auto mb-3 opacity-50" />
           <p className="font-medium text-gray-500 dark:text-gray-200">{search ? 'Nenhum documento encontrado' : 'Nenhum documento enviado'}</p>
           <p className="text-sm mt-1">{search ? 'Tente outro termo de busca.' : 'Clique em "Enviar documento" para começar.'}</p>
         </div>
+      ) : filteredOwn.length === 0 && filteredShared.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <FileText size={48} className="mx-auto mb-3 opacity-50" />
+          <p className="font-medium text-gray-500 dark:text-gray-200">Nenhum documento encontrado</p>
+          <p className="text-sm mt-1">Tente outro termo de busca.</p>
+        </div>
       ) : (
-        <motion.div layout className="space-y-3">
-          <AnimatePresence>
-            {filtered.map(doc => {
-              const fileUrl = doc.url
-              return (
-                <motion.div
-                  key={doc.id}
-                  layout
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10, height: 0 }}
-                  className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 flex items-center gap-4"
-                >
-                  <DocumentPreview url={fileUrl} mimetype={doc.mimetype} name={documentDisplayName(doc)} />
+        <>
+          {filteredOwn.length > 0 && (
+            <div className="space-y-3">
+              <AnimatePresence>
+                {filteredOwn.map(doc => renderDocRow(doc))}
+              </AnimatePresence>
+            </div>
+          )}
 
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{documentDisplayName(doc)}</p>
-                    <p className="text-xs text-gray-400">
-                      {doc.originalname ?? 'desconhecido'} &middot; {((doc.size ?? 0) / 1024).toFixed(1)} KB
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    <a href={fileUrl} target="_blank" rel="noreferrer"
-                      className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-200 hover:text-primary-500 transition-colors"
-                      title="Abrir">
-                      <ExternalLink size={16} />
-                    </a>
-                    <a href={fileUrl} download={doc.originalname}
-                      className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-200 hover:text-primary-500 transition-colors"
-                      title="Baixar">
-                      <Download size={16} />
-                    </a>
-                    <button
-                      onClick={() => setShareDoc(doc)}
-                      className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-200 hover:text-primary-500 transition-colors"
-                      title="Compartilhar"
-                    >
-                      <Share2 size={16} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(doc.id)}
-                      disabled={deletingId === doc.id}
-                      className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-500 dark:text-gray-200 hover:text-red-500 transition-colors disabled:opacity-50"
-                      title="Excluir"
-                    >
-                      {deletingId === doc.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                    </button>
-                  </div>
-                </motion.div>
-              )
-            })}
-          </AnimatePresence>
-        </motion.div>
+          {filteredShared.length > 0 && (
+            <div className="mt-8">
+              <h2 className="font-heading text-lg font-bold mb-3 flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                <Share2 size={18} className="text-primary-600 dark:text-primary-400" /> Compartilhados com você
+              </h2>
+              <div className="space-y-3">
+                <AnimatePresence>
+                  {filteredShared.map(doc => renderDocRow(doc, true))}
+                </AnimatePresence>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {shareDoc && (
