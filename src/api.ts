@@ -1,4 +1,5 @@
 const API = ''
+import { upload } from '@vercel/blob/client'
 
 type ApiOptions = {
   method?: string
@@ -129,10 +130,34 @@ export const apiGetDocuments = () => {
   })
 }
 
-export const apiUploadFile = (file: File) => {
-  const formData = new FormData()
-  formData.append('file', file)
-  return fetch(`${API}/api/upload`, { method: 'POST', body: formData }).then(async (res) => {
+export const apiUploadFile = async (file: File) => {
+  try {
+    const blob = await upload(file.name, file, {
+      access: 'public',
+      handleUploadUrl: `${API}/api/blob/upload`,
+      clientPayload: JSON.stringify(getCredentials()),
+      contentType: file.type || 'application/octet-stream',
+    })
+    return {
+      message: 'File uploaded successfully',
+      file: {
+        filename: blob.pathname,
+        url: blob.url,
+        originalname: file.name,
+        mimetype: file.type || 'application/octet-stream',
+        size: file.size,
+      } as StoredDocument,
+    }
+  } catch (error) {
+    const isTooBig = file.size > 4 * 1024 * 1024
+    if (isTooBig) {
+      throw new Error(
+        `Não foi possível enviar o arquivo (${Math.ceil(file.size / 1024 / 1024)} MB) pelo armazenamento em nuvem. Tente novamente.`
+      )
+    }
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${API}/api/upload`, { method: 'POST', body: formData })
     if (!res.ok) {
       const text = await res.text()
       let message = 'Erro ao enviar arquivo. Tente novamente.'
@@ -146,7 +171,7 @@ export const apiUploadFile = (file: File) => {
       throw new Error(message)
     }
     return res.json() as Promise<{ message: string; file: StoredDocument }>
-  })
+  }
 }
 
 export const apiAddDocument = (documentName: string, uploadedFile: StoredDocument) => {
@@ -157,12 +182,20 @@ export const apiAddDocument = (documentName: string, uploadedFile: StoredDocumen
   })
 }
 
-export const apiDeleteDocument = (documentId: string) => {
+export const apiDeleteDocument = async (documentId: string, blobUrl?: string) => {
   const { email, senha } = getCredentials()
-  return request<{ message: string }>('/api/delete-document', {
+  await request<{ message: string }>('/api/delete-document', {
     method: 'POST',
     body: { email, senha, documentId },
   })
+  if (blobUrl && blobUrl.includes('blob.vercel-storage.com')) {
+    try {
+      await request<{ ok: boolean }>('/api/blob/delete', {
+        method: 'POST',
+        body: { email, senha, url: blobUrl },
+      })
+    } catch {}
+  }
 }
 
 // Credits
