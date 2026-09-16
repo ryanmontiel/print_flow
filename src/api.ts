@@ -133,7 +133,18 @@ export const apiUploadFile = (file: File) => {
   const formData = new FormData()
   formData.append('file', file)
   return fetch(`${API}/api/upload`, { method: 'POST', body: formData }).then(async (res) => {
-    if (!res.ok) throw new Error((await res.json()).error || 'Upload failed')
+    if (!res.ok) {
+      const text = await res.text()
+      let message = 'Erro ao enviar arquivo. Tente novamente.'
+      try {
+        const data = JSON.parse(text)
+        if (data?.error) message = data.error
+      } catch {
+        if (/too large|TOO_LARGE|limit/i.test(text)) message = 'Arquivo muito grande. O limite é 4 MB.'
+        else if (/An error occurred|FUNCTION/i.test(text)) message = 'Servidor demorou demais. Tente novamente.'
+      }
+      throw new Error(message)
+    }
     return res.json() as Promise<{ message: string; file: StoredDocument }>
   })
 }

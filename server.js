@@ -350,7 +350,7 @@ const UPLOAD_HOSTS = [
     name: 'uguu',
     upload: async (formData, blob, fileName) => {
       formData.append('files[]', blob, fileName);
-      const resp = await fetch('https://uguu.se/upload', { method: 'POST', body: formData, signal: AbortSignal.timeout(45000) });
+      const resp = await fetch('https://uguu.se/upload', { method: 'POST', body: formData, signal: AbortSignal.timeout(12000) });
       if (!resp.ok) return { url: null, detail: `status ${resp.status}` };
       const data = await safeJson(resp);
       const url = data?.files?.[0]?.url;
@@ -362,7 +362,7 @@ const UPLOAD_HOSTS = [
     upload: async (formData, blob, fileName) => {
       formData.append('reqtype', 'fileupload');
       formData.append('fileToUpload', blob, fileName);
-      const resp = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: formData, signal: AbortSignal.timeout(45000) });
+      const resp = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: formData, signal: AbortSignal.timeout(12000) });
       const text = (await resp.text()).trim();
       return { url: text.startsWith('https://') ? text : null, detail: text.slice(0, 120) };
     },
