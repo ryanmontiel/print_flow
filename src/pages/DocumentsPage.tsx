@@ -35,8 +35,8 @@ export default function DocumentsPage() {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 4 * 1024 * 1024) {
-      setError('Arquivo muito grande. O limite é 4 MB.')
+    if (file.size > 50 * 1024 * 1024) {
+      setError('Arquivo muito grande. O limite é 50 MB.')
       if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }

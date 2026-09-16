@@ -9,8 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import { handleUpload } from '@vercel/blob/client';
-import { del } from '@vercel/blob';
+import { createMultipartUpload, uploadPart, completeMultipartUpload, del } from '@vercel/blob';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -422,36 +421,88 @@ app.get('/uploads/:file', (req, res) => {
   return res.status(404).json({ error: 'Arquivo não encontrado' });
 });
 
-// ── Vercel Blob (client-side uploads, no 4.5MB limit) ────────────────
+// ── Vercel Blob (multipart relay, sem limite de 4.5MB) ───────────────
 const blobAllowedContentTypes = [...allowedMimes, 'image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const BLOB_MAX_SIZE = 50 * 1024 * 1024;
+const BLOB_MAX_PARTS = 500;
+const MPU_CHUNK_SIZE = 3 * 1024 * 1024;
 
-app.post('/api/blob/upload', async (req, res) => {
+const uploadPartMulter = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MPU_CHUNK_SIZE + 512 * 1024 },
+});
+
+app.post('/api/blob/multipart/start', async (req, res) => {
+  const { email, senha, name, contentType, size } = req.body || {};
+  if (!email || !senha) return res.status(400).json({ error: 'Credenciais ausentes' });
+  if (!name || !contentType || !size) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+  if (!blobAllowedContentTypes.includes(String(contentType))) return res.status(400).json({ error: 'Tipo de arquivo inválido.' });
+  if (!Number.isFinite(size) || size <= 0 || size > BLOB_MAX_SIZE) return res.status(400).json({ error: 'Tamanho inválido (limite 50 MB).' });
   try {
-    const jsonResponse = await handleUpload({
-      body: req.body,
-      request: req,
-      onBeforeGenerateToken: async (_pathname, clientPayload) => {
-        let email = '', senha = '';
-        try {
-          const p = JSON.parse(clientPayload || '{}');
-          email = p.email || '';
-          senha = p.senha || '';
-        } catch {}
-        const user = await authenticateUser(email, senha);
-        if (!user) throw new Error('Não autenticado');
-        return {
-          allowedContentTypes: blobAllowedContentTypes,
-          addRandomSuffix: true,
-          maximumSizeInBytes: 50 * 1024 * 1024,
-          tokenPayload: JSON.stringify({ email }),
-        };
-      },
-      onUploadCompleted: async () => {},
+    const user = await authenticateUser(email, senha);
+    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const created = await createMultipartUpload(String(name), {
+      access: 'public',
+      contentType: String(contentType),
     });
-    return res.json(jsonResponse);
+    return res.json({ uploadId: created.uploadId, key: created.key, pathname: String(name) });
   } catch (err) {
-    console.error('Blob upload error:', err);
-    return res.status(400).json({ error: err.message });
+    console.error('Blob multipart start error:', err);
+    return res.status(500).json({ error: 'Falha ao iniciar envio' });
+  }
+});
+
+app.post('/api/blob/multipart/part', (req, res) => {
+  uploadPartMulter.fields([{ name: 'file', maxCount: 1 }])(req, res, async (error) => {
+    if (error) return res.status(400).json({ error: error.message || 'Falha ao receber parte' });
+    const { email, senha, uploadId, key, pathname, partNumber, contentType } = req.body || {};
+    const file = req.files?.['file']?.[0];
+    if (!email || !senha) return res.status(400).json({ error: 'Credenciais ausentes' });
+    if (!uploadId || !key || !pathname || !partNumber || !file) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+    const part = Number(partNumber);
+    if (!Number.isInteger(part) || part < 1 || part > BLOB_MAX_PARTS) return res.status(400).json({ error: 'Número de parte inválido' });
+    try {
+      const user = await authenticateUser(email, senha);
+      if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+      const result = await uploadPart(String(pathname), file.buffer, {
+        access: 'public',
+        contentType: String(contentType || 'application/octet-stream'),
+        uploadId: String(uploadId),
+        key: String(key),
+        partNumber: part,
+      });
+      return res.json({ etag: result.etag, partNumber: part });
+    } catch (err) {
+      console.error('Blob multipart part error:', err);
+      return res.status(500).json({ error: 'Falha ao enviar parte' });
+    }
+  });
+});
+
+app.post('/api/blob/multipart/complete', async (req, res) => {
+  const { email, senha, uploadId, key, pathname, parts, contentType } = req.body || {};
+  if (!email || !senha) return res.status(400).json({ error: 'Credenciais ausentes' });
+  if (!uploadId || !key || !pathname || !Array.isArray(parts) || parts.length === 0) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+  if (parts.length > BLOB_MAX_PARTS) return res.status(400).json({ error: 'Muitas partes' });
+  const ordered = parts.map((p) => ({ partNumber: Number(p?.partNumber), etag: String(p?.etag || '') }));
+  if (ordered.some((p) => !Number.isInteger(p.partNumber) || p.partNumber < 1 || !p.etag)) return res.status(400).json({ error: 'Lista de partes inválida' });
+  ordered.sort((a, b) => a.partNumber - b.partNumber);
+  for (let i = 0; i < ordered.length; i++) {
+    if (ordered[i].partNumber !== i + 1) return res.status(400).json({ error: 'Partes fora de ordem' });
+  }
+  try {
+    const user = await authenticateUser(email, senha);
+    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const blob = await completeMultipartUpload(String(pathname), ordered, {
+      access: 'public',
+      contentType: String(contentType || 'application/octet-stream'),
+      uploadId: String(uploadId),
+      key: String(key),
+    });
+    return res.json({ url: blob?.url, pathname: blob?.pathname, size: blob?.size });
+  } catch (err) {
+    console.error('Blob multipart complete error:', err);
+    return res.status(500).json({ error: 'Falha ao finalizar envio' });
   }
 });
 
