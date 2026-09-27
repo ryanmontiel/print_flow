@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import PdfPreview from '../components/PdfPreview'
 import ImagePreview from '../components/ImagePreview'
-import { apiGetDocuments, apiGetCredits, apiPrint, apiCupsPrint, BLACK_WHITE_PRICE, type StoredDocument } from '../api'
+import { apiGetDocuments, apiGetCredits, apiPrint, apiCupsPrint, getPrintPrice, printConfigLabel, formatBRL, type StoredDocument, type PrintConfig } from '../api'
 
 type Step = 'select' | 'simulate' | 'done'
 
@@ -21,6 +21,7 @@ export default function KioskPrintPage() {
   const [manualPages, setManualPages] = useState(1)
   const [copies, setCopies] = useState(1)
   const [credits, setCredits] = useState(0)
+  const [config, setConfig] = useState<PrintConfig>({ color: 'bw', duplex: 'single' })
   const [loading, setLoading] = useState(true)
   const [printing, setPrinting] = useState(false)
   const [error, setError] = useState('')
@@ -30,8 +31,9 @@ export default function KioskPrintPage() {
   const isPdf = selected?.mimetype === 'application/pdf'
   const selectedPageCount = isPdf ? pdfSelectedPages.size : manualPages
   const totalPrintedPages = selectedPageCount * copies
-  const totalCost = totalPrintedPages * BLACK_WHITE_PRICE
-  const canPrint = credits >= totalPrintedPages && totalPrintedPages > 0
+  const price = getPrintPrice(config)
+  const totalCost = totalPrintedPages * price
+  const canPrint = credits >= totalCost && totalPrintedPages > 0
 
   const userName = localStorage.getItem('pf-kiosk-name') || ''
 
@@ -81,6 +83,7 @@ export default function KioskPrintPage() {
     setPdfSelectedPages(new Set())
     setManualPages(1)
     setCopies(1)
+    setConfig({ color: 'bw', duplex: 'single' })
     setSuccess('')
     setError('')
     setStep('simulate')
@@ -97,13 +100,13 @@ export default function KioskPrintPage() {
       let docNameToPrint = selected.name
 
       // 1. Debit credits via main server
-      const res = await apiPrint(docIdToPrint, docNameToPrint, totalPrintedPages, totalCost)
+      const res = await apiPrint(docIdToPrint, docNameToPrint, totalPrintedPages, totalCost, config.color, config.duplex)
       setCredits(res.credits)
 
       // 2. Send to CUPS printer
       let cupsMsg = ''
       try {
-        const cupsRes = await apiCupsPrint(selected.url)
+        const cupsRes = await apiCupsPrint(selected.url, config.color, config.duplex)
         cupsMsg = cupsRes.jobId ? ` (job #${cupsRes.jobId})` : ''
       } catch (cupsErr) {
         cupsMsg = '. Atenção: falha ao enviar para impressora, créditos já foram debitados'
@@ -159,7 +162,7 @@ export default function KioskPrintPage() {
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-500">
-            Saldo: <strong className="text-primary-600">{credits} impressões</strong>
+            Saldo: <strong className="text-primary-600">{formatBRL(credits)}</strong>
           </span>
           <span className="text-sm text-gray-400 hidden sm:inline">{userName}</span>
           <button
@@ -193,7 +196,7 @@ export default function KioskPrintPage() {
                 <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
               </button>
             </div>
-            <p className="text-gray-400 text-sm mb-4">Escolha o documento que deseja imprimir em preto e branco</p>
+            <p className="text-gray-400 text-sm mb-4">Escolha o documento que deseja imprimir</p>
 
             {docs.length === 0 ? (
               <div className="text-center py-16 text-gray-400">
@@ -291,6 +294,36 @@ export default function KioskPrintPage() {
               </div>
 
               <div className="space-y-4 mb-6">
+                {/* Configuração */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Cor
+                    </label>
+                    <select
+                      value={config.color}
+                      onChange={e => setConfig(c => ({ ...c, color: e.target.value as PrintConfig['color'] }))}
+                      className="w-full px-3 py-3 border border-gray-300 rounded-xl text-base font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    >
+                      <option value="bw">Preto e branco</option>
+                      <option value="color">Colorido</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Impressão
+                    </label>
+                    <select
+                      value={config.duplex}
+                      onChange={e => setConfig(c => ({ ...c, duplex: e.target.value as PrintConfig['duplex'] }))}
+                      className="w-full px-3 py-3 border border-gray-300 rounded-xl text-base font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    >
+                      <option value="single">Simples</option>
+                      <option value="duplex">Frente e verso</option>
+                    </select>
+                  </div>
+                </div>
+
                 {/* For non-PDFs: manual page count input */}
                 {!isPdf && (
                   <div>
@@ -339,11 +372,11 @@ export default function KioskPrintPage() {
                 <div className="bg-gray-50 rounded-xl p-4 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Configuração</span>
-                    <span className="font-medium text-gray-700">Preto e branco, simples</span>
+                    <span className="font-medium text-gray-700">{printConfigLabel(config)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Preço por página</span>
-                    <span className="font-medium text-gray-700">1 impressão</span>
+                    <span className="font-medium text-gray-700">{formatBRL(price)}</span>
                   </div>
                   {selectedPageCount > 0 && (
                     <>
@@ -364,16 +397,16 @@ export default function KioskPrintPage() {
                   <div className="border-t border-gray-200 pt-2 flex justify-between">
                     <span className="font-medium text-gray-800">Valor total</span>
                     <span className={`font-bold text-lg ${canPrint ? 'text-primary-600' : 'text-red-500'}`}>
-                      {totalPrintedPages} impressões
+                      {formatBRL(totalCost)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Saldo atual</span>
-                    <span className={`font-medium ${credits >= totalPrintedPages ? 'text-primary-600' : 'text-red-500'}`}>
-                      {credits} impressões
+                    <span className={`font-medium ${credits >= totalCost ? 'text-primary-600' : 'text-red-500'}`}>
+                      {formatBRL(credits)}
                     </span>
                   </div>
-                  {credits < totalPrintedPages && (
+                  {credits < totalCost && (
                     <div className="mt-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg text-xs flex items-center gap-1">
                       <AlertCircle size={14} />
                       Créditos insuficientes. Adicione créditos pelo site principal.
@@ -388,7 +421,7 @@ export default function KioskPrintPage() {
                 className="w-full py-4 bg-primary-600 hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-lg rounded-xl transition-colors flex items-center justify-center gap-2"
               >
                 {printing ? <Loader2 size={22} className="animate-spin" /> : <Printer size={22} />}
-                {printing ? 'Imprimindo...' : `Imprimir (${totalPrintedPages} impressões)`}
+                {printing ? 'Imprimindo...' : `Imprimir (${formatBRL(totalCost)})`}
               </button>
             </div>
           </motion.div>

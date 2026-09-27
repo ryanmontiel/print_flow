@@ -85,6 +85,8 @@ export type PrintRecord = {
   documentName: string
   pages: number
   cost: number
+  color?: 'bw' | 'color'
+  duplex?: 'single' | 'duplex'
   status: 'completed' | 'failed'
   printedAt: string
 }
@@ -95,6 +97,29 @@ export type Transaction = {
   description: string
   createdAt: string
 }
+
+export type PrintConfig = {
+  color: 'bw' | 'color'
+  duplex: 'single' | 'duplex'
+}
+
+export const PRINT_PRICES: Record<`${PrintConfig['color']}_${PrintConfig['duplex']}`, number> = {
+  bw_single: 0.5,
+  bw_duplex: 1.0,
+  color_single: 0.75,
+  color_duplex: 1.5,
+}
+
+export const getPrintPrice = (config: PrintConfig) => PRINT_PRICES[`${config.color}_${config.duplex}`]
+
+export const printConfigLabel = (c?: { color?: string; duplex?: string }) => {
+  const color = c?.color === 'color' ? 'Colorido' : 'Preto e branco'
+  const duplex = c?.duplex === 'duplex' ? 'Frente e verso' : 'Simples'
+  return `${color} · ${duplex}`
+}
+
+export const formatBRL = (value: number) =>
+  value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 // Auth
 export const apiLogin = (email: string, senha: string) =>
@@ -214,11 +239,11 @@ export const apiAddCredits = (amount: number, description?: string) => {
 }
 
 // Print
-export const apiPrint = (documentId: string, documentName: string, pages: number, cost: number) => {
+export const apiPrint = (documentId: string, documentName: string, pages: number, cost: number, color: 'bw' | 'color' = 'bw', duplex: 'single' | 'duplex' = 'single') => {
   const { email, senha } = getCredentials()
   return request<{ message: string; printRecord: PrintRecord; credits: number }>('/api/print', {
     method: 'POST',
-    body: { email, senha, documentId, documentName, pages, cost },
+    body: { email, senha, documentId, documentName, pages, cost, color, duplex },
   })
 }
 

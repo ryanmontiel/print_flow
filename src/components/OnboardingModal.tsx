@@ -16,7 +16,7 @@ const steps = [
   {
     icon: CreditCard,
     title: 'Compre Créditos',
-    description: 'Adquira créditos pelo site para usar nas impressões. Cada página tem um custo fixo e você acompanha seu saldo.',
+    description: 'Adquira créditos pelo site para usar nas impressões. O custo por página varia conforme preto e branco/colorido e simples/frente e verso, e você acompanha seu saldo.',
   },
   {
     icon: Printer,

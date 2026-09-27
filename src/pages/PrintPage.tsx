@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Printer, FileText, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react'
-import { apiGetDocuments, apiGetCredits, apiPrint, isOwnDocument, documentDisplayName, type StoredDocument } from '../api'
+import { apiGetDocuments, apiGetCredits, apiPrint, isOwnDocument, documentDisplayName, getPrintPrice, printConfigLabel, formatBRL, type StoredDocument, type PrintConfig } from '../api'
 import { useNavigate } from 'react-router-dom'
 
 export default function PrintPage() {
@@ -10,7 +10,7 @@ export default function PrintPage() {
   const [credits, setCredits] = useState(0)
   const [selectedDoc, setSelectedDoc] = useState<StoredDocument | null>(null)
   const [pages, setPages] = useState(1)
-  const [costPerPage] = useState(0.50)
+  const [config, setConfig] = useState<PrintConfig>({ color: 'bw', duplex: 'single' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [printing, setPrinting] = useState(false)
@@ -36,8 +36,9 @@ export default function PrintPage() {
     }
   }
 
-  const totalCost = pages * costPerPage
-  const canPrint = selectedDoc && credits >= pages && pages > 0
+  const price = getPrintPrice(config)
+  const totalCost = pages * price
+  const canPrint = selectedDoc && credits >= totalCost && pages > 0
   const ownDocuments = documents.filter(isOwnDocument)
 
   const handlePrint = async () => {
@@ -45,7 +46,7 @@ export default function PrintPage() {
     setPrinting(true)
     setError('')
     try {
-      await apiPrint(selectedDoc.id, selectedDoc.name, pages, totalCost)
+      await apiPrint(selectedDoc.id, selectedDoc.name, pages, totalCost, config.color, config.duplex)
       setSuccess(true)
       // Refresh credits
       const credRes = await apiGetCredits().catch(() => null)
@@ -124,6 +125,35 @@ export default function PrintPage() {
             )}
           </div>
 
+          {/* Print configuration */}
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5">
+            <label className="block text-sm font-medium mb-3">Configuração de impressão</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-300 mb-1.5">Cor</label>
+                <select
+                  value={config.color}
+                  onChange={e => setConfig(c => ({ ...c, color: e.target.value as PrintConfig['color'] }))}
+                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-primary-500 outline-none"
+                >
+                  <option value="bw">Preto e branco</option>
+                  <option value="color">Colorido</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-300 mb-1.5">Impressão</label>
+                <select
+                  value={config.duplex}
+                  onChange={e => setConfig(c => ({ ...c, duplex: e.target.value as PrintConfig['duplex'] }))}
+                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-primary-500 outline-none"
+                >
+                  <option value="single">Simples</option>
+                  <option value="duplex">Frente e verso</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           {/* Pages input */}
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5">
             <label className="block text-sm font-medium mb-3">Número de páginas</label>
@@ -147,26 +177,30 @@ export default function PrintPage() {
                 <span className="font-medium">{selectedDoc ? documentDisplayName(selectedDoc) : '—'}</span>
               </div>
               <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-200">Configuração</span>
+                <span className="font-medium">{printConfigLabel(config)}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-200">Páginas</span>
                 <span className="font-medium">{pages}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-200">Custo por página</span>
-                <span className="font-medium">1 impressão</span>
+                <span className="font-medium">{formatBRL(price)}</span>
               </div>
               <div className="border-t border-gray-200 dark:border-gray-700 pt-2 flex justify-between text-base">
                 <span className="font-bold">Total</span>
-                <span className="font-bold text-primary-500">{pages} impressões</span>
+                <span className="font-bold text-primary-500">{formatBRL(totalCost)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500 dark:text-gray-200">Saldo atual</span>
-                <span className={credits >= pages ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
-                  {credits} impressões
+                <span className={credits >= totalCost ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>
+                  {formatBRL(credits)}
                 </span>
               </div>
             </div>
 
-            {credits < pages && selectedDoc && (
+            {credits < totalCost && selectedDoc && (
               <div className="mt-4 flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg">
                 <AlertTriangle size={16} />
                 <span>Créditos insuficientes.{' '}</span>

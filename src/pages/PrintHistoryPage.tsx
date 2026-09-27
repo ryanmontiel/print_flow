@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Printer, CheckCircle, XCircle, FileText } from 'lucide-react'
-import { apiGetPrintHistory, type PrintRecord } from '../api'
+import { apiGetPrintHistory, formatBRL, printConfigLabel, type PrintRecord } from '../api'
 
 export default function PrintHistoryPage() {
   const [history, setHistory] = useState<PrintRecord[]>([])
@@ -69,7 +69,7 @@ export default function PrintHistoryPage() {
                   <p className="font-medium truncate">{record.documentName}</p>
                 </div>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {new Date(record.printedAt).toLocaleString('pt-BR')}
+                  {new Date(record.printedAt).toLocaleString('pt-BR')} · {printConfigLabel(record)}
                 </p>
               </div>
 
@@ -81,7 +81,7 @@ export default function PrintHistoryPage() {
                 <p className={`text-sm font-semibold ${
                   record.status === 'completed' ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  {record.pages} créditos
+                  {formatBRL(record.cost || 0)}
                 </p>
                 <span className={`text-xs ${
                   record.status === 'completed'

@@ -189,6 +189,17 @@ const PASSWORD_STRENGTH_RE = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/;
 const isInstitutionalEmail = (email) => INSTITUTIONAL_EMAIL_RE.test(String(email || '').trim().toLowerCase());
 const isValidPassword = (senha) => PASSWORD_STRENGTH_RE.test(String(senha || ''));
 
+// ── Print pricing (BRL per page) ──────────────────────────────────────
+const PRINT_PRICES = {
+  bw: { single: 0.5, duplex: 1.0 },
+  color: { single: 0.75, duplex: 1.5 },
+};
+const getUnitPrice = (color, duplex) => {
+  const p = PRINT_PRICES[color] || PRINT_PRICES.bw;
+  return p && p[duplex] != null ? p[duplex] : PRINT_PRICES.bw.single;
+};
+const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+
 // ═══════════════════════════════════════════════════════════════════════
 // ROUTES
 // ═══════════════════════════════════════════════════════════════════════
@@ -541,12 +552,14 @@ app.post('/api/credits/add', async (req, res) => {
     const user = await authenticateUser(email, senha);
     if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
 
-    const prints = Math.round(Number(amount) / 0.50);
+    const creditAmount = round2(Number(amount));
+    if (!(creditAmount > 0)) return res.status(400).json({ error: 'Valor inválido' });
+
     const current = Number(user.creditos || 0);
-    const newBalance = current + prints;
+    const newBalance = round2(current + creditAmount);
 
     const transactions = parseJsonField(user.transacoes, []);
-    transactions.push({ amount: prints, description: description || 'Adição de créditos', type: 'credit', createdAt: new Date().toISOString() });
+    transactions.push({ amount: creditAmount, description: description || 'Adição de créditos', type: 'credit', createdAt: new Date().toISOString() });
 
     await updateUserRecord(user.__id, { ...user, creditos: String(newBalance), transacoes: JSON.stringify(transactions) });
     res.json({ credits: newBalance, transactions });
@@ -558,14 +571,18 @@ app.post('/api/credits/add', async (req, res) => {
 
 // ── Print ────────────────────────────────────────────────────────────
 app.post('/api/print', async (req, res) => {
-  const { email, senha, documentId, documentName, pages, cost } = req.body;
+  const { email, senha, documentId, documentName, pages, cost, color, duplex } = req.body;
   if (!email || !senha || !documentId) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
   try {
     const user = await authenticateUser(email, senha);
     if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
 
+    const printColor = color === 'color' ? 'color' : 'bw';
+    const printDuplex = duplex === 'duplex' ? 'duplex' : 'single';
+    const printCost = round2(Number(cost) > 0 ? cost : getUnitPrice(printColor, printDuplex) * (Number(pages) || 1));
+    if (!(printCost > 0)) return res.status(400).json({ error: 'Valor de impressão inválido' });
+
     const current = Number(user.creditos || 0);
-    const printCost = Math.round((cost || 0) / 0.50);
     if (current < printCost) return res.status(402).json({ error: 'Créditos insuficientes' });
 
     const printRecord = {
@@ -573,6 +590,8 @@ app.post('/api/print', async (req, res) => {
       documentId,
       documentName: documentName || 'Unknown',
       pages: pages || 1,
+      color: printColor,
+      duplex: printDuplex,
       cost: printCost,
       status: 'completed',
       printedAt: new Date().toISOString(),
@@ -582,9 +601,10 @@ app.post('/api/print', async (req, res) => {
     history.push(printRecord);
 
     const transactions = parseJsonField(user.transacoes, []);
-    transactions.push({ amount: -printCost, description: `Impressão: ${documentName || 'Documento'}`, type: 'debit', createdAt: new Date().toISOString() });
+    const configLabel = printColor === 'color' ? 'colorida' : 'preto e branco';
+    transactions.push({ amount: -printCost, description: `Impressão: ${documentName || 'Documento'} (${printDuplex === 'duplex' ? 'frente e verso, ' : ''}${configLabel})`, type: 'debit', createdAt: new Date().toISOString() });
 
-    const newBalance = current - printCost;
+    const newBalance = round2(current - printCost);
     await updateUserRecord(user.__id, {
       ...user,
       creditos: String(newBalance),
@@ -739,12 +759,12 @@ const INFINITE_API = 'https://api.checkout.infinitepay.io';
 const addCreditsToUser = async (targetEmail, amount, description) => {
   const user = await findUserByEmail(targetEmail);
   if (!user) throw new Error(`Usuário ${targetEmail} não encontrado`);
-  const prints = Math.round(Number(amount) / 0.50);
+  const creditAmount = round2(Number(amount));
   const current = Number(user.creditos || 0);
-  const newBalance = current + prints;
+  const newBalance = round2(current + creditAmount);
 
   const transactions = parseJsonField(user.transacoes, []);
-  transactions.push({ amount: prints, description: description || 'Créditos via pagamento', type: 'credit', createdAt: new Date().toISOString() });
+  transactions.push({ amount: creditAmount, description: description || 'Créditos via pagamento', type: 'credit', createdAt: new Date().toISOString() });
 
   const ok = await updateUserRecord(user.__id, { ...user, creditos: String(newBalance), transacoes: JSON.stringify(transactions) });
   if (!ok) throw new Error('Falha ao atualizar créditos');
@@ -822,7 +842,7 @@ app.post('/api/check-payment', async (req, res) => {
     if (!payment) return res.status(404).json({ error: 'Pagamento não encontrado' });
 
     if (payment.status === 'completed') {
-      return res.json({ paid: true, amount: Math.round(payment.amount / 0.50) });
+      return res.json({ paid: true, amount: round2(payment.amount) });
     }
 
     if (slug || transaction_nsu) {
@@ -847,7 +867,7 @@ app.post('/api/check-payment', async (req, res) => {
           payment.transaction_nsu = transaction_nsu || '';
           pending[order_nsu] = payment;
           await writePendingForUser(user, pending);
-          return res.json({ paid: true, amount: Math.round(payment.amount / 0.50) });
+          return res.json({ paid: true, amount: round2(payment.amount) });
         }
       }
     }

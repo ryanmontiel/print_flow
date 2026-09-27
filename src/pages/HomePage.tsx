@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { FileText, CreditCard, Printer, ArrowRight, TrendingUp, TrendingDown, Send, X } from 'lucide-react'
-import { apiGetDocuments, apiGetCredits, apiGetPrintHistory, apiGetUsers, apiShareDocument, isOwnDocument, documentDisplayName, type StoredDocument, type Transaction } from '../api'
+import { apiGetDocuments, apiGetCredits, apiGetPrintHistory, apiGetUsers, apiShareDocument, isOwnDocument, documentDisplayName, formatBRL, type StoredDocument, type Transaction } from '../api'
 
 export default function HomePage() {
   const navigate = useNavigate()
@@ -111,8 +111,8 @@ export default function HomePage() {
     {
       icon: CreditCard,
       label: 'Créditos',
-      value: credits,
-      description: 'impressões disponíveis',
+      value: formatBRL(credits),
+      description: 'saldo disponível',
       color: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
       onClick: () => navigate('/credits'),
     },
@@ -211,7 +211,7 @@ export default function HomePage() {
                     <p className="text-xs text-gray-400">{new Date(tx.createdAt).toLocaleString('pt-BR')}</p>
                   </div>
                   <span className={`text-sm font-semibold shrink-0 ${tx.type === 'credit' ? 'text-green-600' : 'text-red-600'}`}>
-                    {tx.type === 'credit' ? '+' : '-'}{Math.abs(tx.amount)}
+                    {tx.type === 'credit' ? '+' : '-'}{formatBRL(Math.abs(tx.amount))}
                   </span>
                 </div>
               ))}

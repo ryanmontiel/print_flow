@@ -70,7 +70,7 @@ app.get('/api/health', async (_req, res) => {
 
 // ── CUPS print endpoint ──────────────────────────────────────────────
 app.post('/api/cups-print', async (req, res) => {
-  const { fileUrl } = req.body;
+  const { fileUrl, color, duplex } = req.body;
   if (!fileUrl) return res.status(400).json({ error: 'fileUrl é obrigatório' });
 
   try {
@@ -83,9 +83,11 @@ app.post('/api/cups-print', async (req, res) => {
     const tempFile = path.join(os.tmpdir(), `pf-${Date.now()}${ext}`);
     fs.writeFileSync(tempFile, buffer);
 
-    // Send to CUPS: B&W, single-sided
+    // Send to CUPS with color and sides options
     const dest = CUPS_IPP_URL || CUPS_PRINTER;
-    const cmd = `lp -d "${dest}" -o ColorModel=Gray -o sides=one-sided "${tempFile}"`;
+    const colorModel = color === 'color' ? 'Color' : 'Gray';
+    const sides = duplex === 'duplex' ? 'two-sided-long-edge' : 'one-sided';
+    const cmd = `lp -d "${dest}" -o ColorModel=${colorModel} -o sides=${sides} "${tempFile}"`;
     exec(cmd, (error, stdout, stderr) => {
       try { fs.unlinkSync(tempFile); } catch {}
 

@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { CreditCard, TrendingUp, TrendingDown, Loader2, Wallet, ExternalLink, CheckCircle } from 'lucide-react'
-import { apiGetCredits, apiCreatePaymentLink, apiCheckPayment, type Transaction } from '../api'
+import { apiGetCredits, apiCreatePaymentLink, apiCheckPayment, formatBRL, type Transaction } from '../api'
 
 const plans = [
-  { credits: 10, label: 'Básico', price: 5 },
-  { credits: 20, label: 'Popular', price: 10, popular: true },
-  { credits: 40, label: 'Plus', price: 20 },
-  { credits: 100, label: 'Premium', price: 50 },
+  { amount: 5, label: 'Básico' },
+  { amount: 10, label: 'Popular', popular: true },
+  { amount: 20, label: 'Plus' },
+  { amount: 50, label: 'Premium' },
 ]
 
 export default function CreditsPage() {
@@ -70,13 +70,13 @@ export default function CreditsPage() {
     }
   }
 
-  const handleBuy = async (price: number) => {
+  const handleBuy = async (amount: number) => {
     setProcessingPayment(true)
     setError('')
     setPaymentSuccess(null)
     try {
       const redirectUrl = window.location.origin + '/credits'
-      const res = await apiCreatePaymentLink(price, redirectUrl)
+      const res = await apiCreatePaymentLink(amount, redirectUrl)
       window.location.href = res.url
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao iniciar pagamento')
@@ -96,19 +96,19 @@ export default function CreditsPage() {
       >
         <div className="flex items-center gap-3 mb-2">
           <Wallet size={24} />
-          <span className="text-primary-100 text-sm font-medium">Créditos</span>
+          <span className="text-primary-100 text-sm font-medium">Saldo</span>
         </div>
         {loading ? (
           <div className="h-10 w-32 bg-white/20 rounded-lg animate-pulse" />
         ) : (
-          <p className="text-4xl font-bold tabular-nums tracking-tight">{credits} impressões</p>
+          <p className="text-4xl font-bold tabular-nums tracking-tight">{formatBRL(credits)}</p>
         )}
       </motion.div>
 
       {paymentSuccess && (
         <div className="mb-4 px-4 py-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 rounded-lg text-sm flex items-center gap-2">
           <CheckCircle size={18} />
-          Pagamento de {paymentSuccess} impressões confirmado! Créditos adicionados à sua conta.
+          Pagamento de {formatBRL(Number(paymentSuccess))} confirmado! Saldo adicionado à sua conta.
         </div>
       )}
 
@@ -135,7 +135,7 @@ export default function CreditsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {plans.map((plan, i) => (
             <motion.div
-              key={plan.credits}
+              key={plan.amount}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 + i * 0.06 }}
@@ -152,13 +152,13 @@ export default function CreditsPage() {
               )}
               <h3 className="font-heading text-lg font-bold mb-1">{plan.label}</h3>
               <p className="text-2xl font-bold text-primary-500 mb-1 tabular-nums">
-                R$ {plan.price.toFixed(2)}
+                {formatBRL(plan.amount)}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-200 mb-4">
-                {plan.credits} impressões
+                em créditos de impressão
               </p>
               <button
-                onClick={() => handleBuy(plan.price)}
+                onClick={() => handleBuy(plan.amount)}
                 disabled={processingPayment}
                 className="w-full py-2 bg-primary-500 hover:bg-primary-600 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
               >
@@ -200,7 +200,7 @@ export default function CreditsPage() {
                 <span className={`text-sm font-semibold ${
                   tx.type === 'credit' ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  {tx.type === 'credit' ? '+' : '-'}{Math.abs(tx.amount)} impressões
+                  {tx.type === 'credit' ? '+' : '-'}{formatBRL(Math.abs(tx.amount))}
                 </span>
               </div>
             ))}
