@@ -9,6 +9,7 @@ import CreditsPage from './pages/CreditsPage'
 import PrintHistoryPage from './pages/PrintHistoryPage'
 import ProfilePage from './pages/ProfilePage'
 import NotificationsPage from './pages/NotificationsPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import OnboardingModal from './components/OnboardingModal'
 import CookieConsent from './components/CookieConsent'
 import { useState, useEffect, useCallback } from 'react'
@@ -97,6 +98,10 @@ function AppRoutes() {
           <Route
             path="/login"
             element={user ? <Navigate to="/home" replace /> : <LoginPage />}
+          />
+          <Route
+            path="/reset-password"
+            element={<ResetPasswordPage />}
           />
           <Route
             path="/home"

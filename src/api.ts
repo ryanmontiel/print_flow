@@ -146,6 +146,18 @@ export const apiResendCode = (email: string) =>
     body: { email },
   })
 
+export const apiForgotPassword = (email: string) =>
+  request<{ message: string }>('/api/forgot-password', {
+    method: 'POST',
+    body: { email },
+  })
+
+export const apiResetPassword = (code: string, senha: string) =>
+  request<{ message: string }>('/api/reset-password', {
+    method: 'POST',
+    body: { code, senha },
+  })
+
 // Documents
 export const apiGetDocuments = () => {
   const { email, senha } = getCredentials()

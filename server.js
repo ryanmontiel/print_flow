@@ -18,9 +18,12 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
+if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
 const port = process.env.PORT || 4002;
 
-// ── Middleware ────────────────────────────────────────────────────────
+// ── Middleware ─────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
 
@@ -102,13 +105,8 @@ const sendVerificationEmail = async (email, code) => {
         secure: SMTP_PORT === 465,
         auth: { user: SMTP_USER, pass: SMTP_PASS },
       });
-      const html = `<div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;padding:24px;text-align:center">
-        <h2 style="color:#4F46E5;margin-bottom:4px">PrintFlow</h2>
-        <p style="color:#555;font-size:14px">Seu código de verificação:</p>
-        <p style="font-size:36px;font-weight:bold;letter-spacing:10px;margin:20px 0;color:#111">${code}</p>
-        <p style="color:#999;font-size:12px">Expira em 10 minutos. Se você não solicitou, ignore este email.</p>
-      </div>`;
-      await transporter.sendMail({ from: FROM_EMAIL, to: [email], subject: 'PrintFlow - Código de verificação', html });
+const html = `<div style="font-family:system-ui,-apple-system,sans-serif;padding:24px;background:#f6f6f6"><div style="max-width:420px;margin:auto;background:#fff;border-radius:12px;padding:24px"><h2 style="margin-top:0;color:#4F46E5">PrintFlow</h2><p>Seu código de verificação do PrintFlow é:</p><div style="font-size:40px;letter-spacing:8px;font-weight:700;text-align:center;margin:24px 0;padding:16px;background:#f2f7ff;border-radius:8px;color:#2563eb">${code}</div><p style="color:#999;font-size:12px">Expira em 10 minutos. Se você não solicitou, ignore este email.</p></div></div>`;
+      await transporter.sendMail({ from: FROM_EMAIL, to: [email], subject: 'PrintFlow - Código de verificação', text: `PrintFlow\n\nSeu código de verificação é: ${code}\n\nExpira em 10 minutos. Se você não solicitou, ignore este email.`, html });
       console.log(`Email enviado para ${email} via ${SMTP_HOST}`);
       return true;
     } catch (err) {
@@ -119,6 +117,34 @@ const sendVerificationEmail = async (email, code) => {
     }
   }
   printCodeToConsole(email, code);
+  return true;
+};
+
+const sendPasswordResetEmail = async (email, token) => {
+const frontend = process.env.FRONTEND_URL || '';
+  let resetUrl;
+  if (frontend.startsWith('http')) {
+    resetUrl = `${frontend.replace(/\/$/, '')}/reset-password?code=${encodeURIComponent(token)}`;
+  } else {
+    resetUrl = `https://tcc-printflow.vercel.app/reset-password?code=${encodeURIComponent(token)}`;
+  }
+  if (SMTP_USER && SMTP_PASS) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        secure: SMTP_PORT === 465,
+        auth: { user: SMTP_USER, pass: SMTP_PASS },
+      });
+const html = `<div style="font-family:system-ui,-apple-system,sans-serif;padding:24px;background:#f6f6f6"><div style="max-width:480px;margin:auto;background:#fff;border-radius:12px;padding:24px"><h2 style="margin-top:0;color:#4F46E5">PrintFlow</h2><p>Recebemos uma solicitação para redefinir sua senha.</p><p>Clique no botão abaixo para criar uma nova senha:</p><div style="text-align:center;margin:32px 0"><a href="${resetUrl}" style="display:inline-block;padding:14px 28px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Redefinir senha</a></div><p style="color:#666;font-size:14px">Ou copie este link:</p><p style="word-break:break-all;font-size:12px;color:#2563eb">${resetUrl}</p><p style="color:#999;font-size:12px;margin-top:24px">Expira em 15 minutos. Se não foi você, ignore este email.</p></div></div>`;
+      await transporter.sendMail({ from: FROM_EMAIL, to: [email], subject: 'PrintFlow - Recuperação de senha', text: `PrintFlow\n\nRecebemos uma solicitação para redefinir sua senha.\n\nAcesse o link abaixo para criar uma nova senha:\n${resetUrl}\n\nExpira em 15 minutos. Se não foi você, ignore este email.`, html });
+      return true;
+    } catch (err) {
+      console.error('SMTP reset error:', err.message);
+      return false;
+    }
+  }
+  console.log('Reset link:', resetUrl);
   return true;
 };
 
@@ -181,6 +207,9 @@ const authenticateUser = async (email, senha) => {
 };
 
 const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+const generateToken = () => crypto.randomBytes(32).toString('hex');
+
+const resetTokens = new Map();
 
 // ── Validation rules ─────────────────────────────────────────────────
 const INSTITUTIONAL_EMAIL_RE = /@(?:academico\.)?ifsul\.edu\.br$/i;
@@ -780,7 +809,7 @@ const findPendingPaymentOwner = async (order_nsu) => {
   const records = await listAllRecords();
   for (const record of records) {
     const pending = parseJsonField(record.pagamentospendentes, {});
-    if (pending[order_nsu]) return record;
+    if (pending && pending[order_nsu]) return record;
   }
   return null;
 };
@@ -801,7 +830,7 @@ app.post('/api/create-payment-link', async (req, res) => {
       items: [{ quantity: 1, price: priceInCents, description: `Créditos PrintFlow - R$ ${amount.toFixed(2)}` }],
       order_nsu,
       redirect_url: defaultRedirect,
-      webhook_url: `${req.protocol}://${req.get('host')}/api/webhook-infinitepay`,
+      webhook_url: process.env.WEBHOOK_URL || `${req.protocol}://${req.get('host')}/api/webhook-infinitepay`,
       payment_methods: ['pix'],
     };
 
@@ -933,3 +962,44 @@ if (!process.env.VERCEL) {
     console.log(`Backend listening on http://localhost:${port}`);
   });
 }
+
+app.post('/api/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email obrigatorio' });
+  const norm = String(email).trim().toLowerCase();
+  try {
+    const user = await findUserByEmail(norm);
+    if (!user) return res.status(404).json({ error: 'email nao cadastrado' });
+    const token = generateToken();
+    const expires = Date.now() + 15*60000;
+    resetTokens.clear();
+    const code = crypto.randomBytes(12).toString('base64url');
+    resetTokens.set(code, { email: norm, expires });
+    await sendPasswordResetEmail(norm, code);
+    const frontend = process.env.FRONTEND_URL || '';
+    const base = frontend.startsWith('http')
+      ? frontend.replace(/\/$/, '')
+      : 'https://tcc-printflow.vercel.app';
+    const resetUrl = `${base}/reset-password?code=${code}`;
+    console.log('[forgot-password] resetUrl:', resetUrl);
+    res.json({ message: 'Link de recuperacao enviado.' });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Erro' }); }
+});
+
+app.post('/api/reset-password', async (req, res) => {
+  const { code, senha } = req.body;
+  if (!code || !senha) return res.status(400).json({ error: 'Campos obrigatorios' });
+  if (!/^(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/.test(String(senha)))
+    return res.status(400).json({ error: 'Senha fraca' });
+  try {
+    const entry = resetTokens.get(String(code));
+    if (!entry) return res.status(400).json({ error: 'Link invalido' });
+    if (Date.now() > entry.expires) { resetTokens.delete(String(code)); return res.status(400).json({ error: 'Link expirado' }); }
+    const user = await findUserByEmail(entry.email);
+    if (!user) return res.status(400).json({ error: 'Link invalido' });
+    const hash = await bcrypt.hash(senha, 10);
+    await updateUserRecord(user.__id, { ...user, senhahash: hash });
+    resetTokens.delete(String(code));
+    res.json({ message: 'Senha redefinida' });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Erro' }); }
+});

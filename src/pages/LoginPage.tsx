@@ -1,9 +1,9 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { apiLogin, apiRegister, apiVerifyEmail, apiResendCode } from '../api'
+import { apiLogin, apiRegister, apiVerifyEmail, apiResendCode, apiForgotPassword } from '../api'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Printer, FileText, MailCheck, Check } from 'lucide-react'
+import { Printer, FileText, MailCheck, Check, Lock } from 'lucide-react'
 
 function PasswordChecklist({ password }: { password: string }) {
   const requirements = [
@@ -77,6 +77,11 @@ export default function LoginPage() {
   const [verifyCode, setVerifyCode] = useState('')
   const [senhaValue, setSenhaValue] = useState('')
   const [resendCooldown, setResendCooldown] = useState(0)
+  const [forgotMode, setForgotMode] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotLoading, setForgotLoading] = useState(false)
+  const [forgotSent, setForgotSent] = useState(false)
+  const [forgotError, setForgotError] = useState<string | null>(null)
   const noticeTimerRef = useRef<number | null>(null)
   const cooldownRef = useRef<number | null>(null)
   const { login } = useAuth()
@@ -194,6 +199,31 @@ export default function LoginPage() {
     }
   }
 
+  const handleForgotPassword = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!forgotEmail.trim()) {
+      showNotice('Digite seu email.', 'error')
+      return
+    }
+    setForgotLoading(true)
+    try {
+      await apiForgotPassword(forgotEmail.trim().toLowerCase())
+      setForgotSent(true)
+      setForgotError(null)
+      showNotice('Link de recuperação enviado para seu email.', 'success')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Falha ao solicitar recuperação'
+      if (/cadastrado/i.test(msg)) {
+        setForgotSent(true)
+        setForgotError('Email não cadastrado.')
+      } else {
+        showNotice(msg, 'error')
+      }
+    } finally {
+      setForgotLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-gray-900">
       {/* Hero side */}
@@ -298,6 +328,69 @@ export default function LoginPage() {
                 Voltar
               </button>
             </form>
+          ) : forgotMode ? (
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-14 h-14 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+                  <Lock size={28} className="text-primary-600 dark:text-primary-400" />
+                </div>
+              </div>
+
+              {!forgotSent ? (
+                <>
+                  <div>
+                    <label htmlFor="forgotEmail" className="block text-sm font-medium mb-1 text-gray-900 dark:text-gray-200">Email</label>
+                    <input
+                      id="forgotEmail"
+                      type="email"
+                      required
+                      value={forgotEmail}
+                      onChange={e => setForgotEmail(e.target.value)}
+                      placeholder="seu@email.com"
+                      className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all"
+                      autoFocus
+                    />
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                      Enviaremos um link de recuperação para seu email.
+                    </p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={forgotLoading}
+                    className="w-full py-2.5 bg-primary-500 hover:bg-primary-600 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+                  >
+                    {forgotLoading ? 'Enviando...' : 'Enviar link de recuperação'}
+                  </button>
+                </>
+              ) : forgotError ? (
+                <>
+                  <div className="px-4 py-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg text-sm text-center">
+                    {forgotError}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={forgotLoading}
+                    onClick={() => { setForgotSent(false); setForgotError(null) }}
+                    className="w-full py-2.5 bg-primary-500 hover:bg-primary-600 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+                  >
+                    Tentar novamente
+                  </button>
+                </>
+              ) : (
+                <div className="px-4 py-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 rounded-lg text-sm text-center">
+                  Se o email existir, você receberá um link para redefinir sua senha. Verifique sua caixa de entrada.
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => { setForgotMode(false); setForgotSent(false); setForgotError(null); setNotice(null) }}
+                className="w-full py-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-200 dark:hover:text-gray-100 font-medium transition-colors"
+              >
+                Voltar para login
+              </button>
+            </form>
           ) : (
             <form key={mode} onSubmit={handleSubmitCredentials} className="space-y-4">
               <div>
@@ -371,15 +464,24 @@ export default function LoginPage() {
               )}
 
               {mode === 'login' && (
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={remember}
-                    onChange={e => setRemember(e.target.checked)}
-                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                  />
-                  <span className="text-sm text-gray-600 dark:text-gray-200">Lembrar de mim</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={remember}
+                      onChange={e => setRemember(e.target.checked)}
+                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-gray-600 dark:text-gray-200">Lembrar de mim</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => { setForgotMode(true); setForgotSent(false); setForgotEmail(''); setNotice(null) }}
+                    className="text-sm text-primary-500 hover:text-primary-600 font-medium transition-colors"
+                  >
+                    Esqueci minha senha
+                  </button>
+                </div>
               )}
 
               <button
@@ -392,7 +494,7 @@ export default function LoginPage() {
             </form>
           )}
 
-          {step === 'credentials' && (
+          {step === 'credentials' && !forgotMode && (
             <div className="mt-6 text-center">
               <button
                 onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setSenhaValue('') }}
