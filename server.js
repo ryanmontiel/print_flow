@@ -795,7 +795,7 @@ const addCreditsToUser = async (targetEmail, amount, description) => {
   const transactions = parseJsonField(user.transacoes, []);
   transactions.push({ amount: creditAmount, description: description || 'Créditos via pagamento', type: 'credit', createdAt: new Date().toISOString() });
 
-  const ok = await updateUserRecord(user.__id, { ...user, creditos: String(newBalance), transacoes: JSON.stringify(transactions) });
+  const ok = await updateUserRecord(user.__id, { creditos: String(newBalance), transacoes: JSON.stringify(transactions) });
   if (!ok) throw new Error('Falha ao atualizar créditos');
 };
 
@@ -912,10 +912,55 @@ app.post('/api/check-payment', async (req, res) => {
       }
     }
 
-    return res.json({ paid: false });
+    return res.json({ received: true });
   } catch (err) {
     console.error('[check-payment] error:', err);
     res.status(500).json({ error: 'Falha ao verificar pagamento' });
+  }
+});
+
+app.post('/api/reprocess-payment', async (req, res) => {
+  const { email, senha, order_nsu } = req.body;
+  console.log('[reprocess-payment] request:', { email, order_nsu });
+  if (!email || !senha || !order_nsu) return res.status(400).json({ error: 'Campos obrigatórios' });
+  try {
+    const user = await authenticateUser(email, senha);
+    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+
+    const pending = readPendingForUser(user);
+    const payment = pending[order_nsu];
+    if (!payment) return res.status(404).json({ error: 'Pagamento não encontrado' });
+
+    if (payment.status === 'completed') {
+      return res.json({ message: 'Já processado', paid: true, amount: round2(payment.amount) });
+    }
+
+    const checkPayload = { handle: INFINITE_HANDLE, order_nsu };
+    const checkResp = await fetchWithTimeout(`${INFINITE_API}/payment_check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(checkPayload),
+    });
+    console.log('[reprocess-payment] infinitepay response:', checkResp.status);
+    if (!checkResp.ok) return res.status(502).json({ error: 'Falha ao consultar InfinitePay' });
+
+    const checkData = await safeJson(checkResp);
+    console.log('[reprocess-payment] check data:', checkData);
+    if (!checkData?.paid) return res.json({ paid: false, message: 'Pagamento ainda não confirmado' });
+
+    await addCreditsToUser(email, payment.amount, `Créditos via InfinitePay (reprocess) - ${order_nsu}`);
+    console.log('[reprocess-payment] credits added for:', email);
+
+    payment.status = 'completed';
+    payment.paidAt = new Date().toISOString();
+    payment.transaction_nsu = checkData.transaction_nsu || '';
+    pending[order_nsu] = payment;
+    await writePendingForUser(user, pending);
+
+    return res.json({ paid: true, amount: round2(payment.amount), message: 'Reprocessado com sucesso' });
+  } catch (err) {
+    console.error('[reprocess-payment] error:', err);
+    res.status(500).json({ error: 'Falha ao reprocessar' });
   }
 });
 

@@ -300,6 +300,14 @@ export const apiCheckPayment = (order_nsu: string, slug?: string, transaction_ns
   })
 }
 
+export const apiReprocessPayment = (order_nsu: string) => {
+  const { email, senha } = getCredentials()
+  return request<{ paid: boolean; amount?: number; message: string }>('/api/reprocess-payment', {
+    method: 'POST',
+    body: { email, senha, order_nsu },
+  })
+}
+
 // Notifications
 export const apiGetNotifications = () => {
   const { email, senha } = getCredentials()
