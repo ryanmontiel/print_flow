@@ -308,6 +308,22 @@ export const apiReprocessPayment = (order_nsu: string) => {
   })
 }
 
+export const apiDebugAddCredits = (amount: number, description?: string) => {
+  const { email, senha } = getCredentials()
+  return request<{ success: boolean; newCredits: string; transactions: any[] }>('/api/debug/add-credits', {
+    method: 'POST',
+    body: { email, senha, amount, description },
+  })
+}
+
+export const apiDebugUser = () => {
+  const { email, senha } = getCredentials()
+  return request<{ __id: number; email: string; creditos: string; transacoes: any[]; pagamentospendentes: any }>('/api/debug/user', {
+    method: 'POST',
+    body: { email, senha },
+  })
+}
+
 // Notifications
 export const apiGetNotifications = () => {
   const { email, senha } = getCredentials()

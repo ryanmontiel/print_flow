@@ -795,8 +795,19 @@ const addCreditsToUser = async (targetEmail, amount, description) => {
   const transactions = parseJsonField(user.transacoes, []);
   transactions.push({ amount: creditAmount, description: description || 'Créditos via pagamento', type: 'credit', createdAt: new Date().toISOString() });
 
-  const ok = await updateUserRecord(user.__id, { creditos: String(newBalance), transacoes: JSON.stringify(transactions) });
-  if (!ok) throw new Error('Falha ao atualizar créditos');
+  console.log('[addCreditsToUser] updating:', { userId: user.__id, email: targetEmail, current, newBalance, transactionsCount: transactions.length });
+  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}/${user.__id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
+    body: JSON.stringify({ creditos: String(newBalance), transacoes: JSON.stringify(transactions) }),
+  });
+  console.log('[addCreditsToUser] patch response:', resp.status, resp.statusText);
+  if (!resp.ok && resp.status !== 204) {
+    const text = await resp.text().catch(() => '');
+    console.error('[addCreditsToUser] patch failed:', text);
+    throw new Error(`Falha ao atualizar créditos (${resp.status}): ${text.slice(0,200)}`);
+  }
+  console.log('[addCreditsToUser] success for:', targetEmail);
 };
 
 const readPendingForUser = (user) => parseJsonField(user.pagamentospendentes, {});
@@ -961,6 +972,40 @@ app.post('/api/reprocess-payment', async (req, res) => {
   } catch (err) {
     console.error('[reprocess-payment] error:', err);
     res.status(500).json({ error: 'Falha ao reprocessar' });
+  }
+});
+
+app.post('/api/debug/add-credits', async (req, res) => {
+  const { email, senha, amount, description } = req.body;
+  if (!email || !senha || !amount) return res.status(400).json({ error: 'Campos obrigatórios' });
+  try {
+    const user = await authenticateUser(email, senha);
+    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    await addCreditsToUser(email, amount, description || 'Debug manual');
+    const fresh = await findUserByEmail(email);
+    return res.json({ success: true, newCredits: fresh.creditos, transactions: parseJsonField(fresh.transacoes, []) });
+  } catch (err) {
+    console.error('[debug/add-credits] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/debug/user', async (req, res) => {
+  const { email, senha } = req.body;
+  if (!email || !senha) return res.status(400).json({ error: 'Credenciais obrigatórias' });
+  try {
+    const user = await authenticateUser(email, senha);
+    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    return res.json({
+      __id: user.__id,
+      email: user.email,
+      creditos: user.creditos,
+      transacoes: parseJsonField(user.transacoes, []),
+      pagamentospendentes: parseJsonField(user.pagamentospendentes, {}),
+    });
+  } catch (err) {
+    console.error('[debug/user] error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
