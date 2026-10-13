@@ -816,6 +816,7 @@ const findPendingPaymentOwner = async (order_nsu) => {
 
 app.post('/api/create-payment-link', async (req, res) => {
   const { email, senha, amount, redirect_url } = req.body;
+  console.log('[create-payment-link] request:', { email, amount, redirect_url });
   if (!email || !senha || !amount || amount <= 0) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
   try {
     const user = await authenticateUser(email, senha);
@@ -825,14 +826,16 @@ app.post('/api/create-payment-link', async (req, res) => {
     const priceInCents = Math.round(amount * 100);
     const defaultRedirect = redirect_url || `${req.protocol}://${req.get('host')}/credits`;
 
+    const webhookUrl = process.env.WEBHOOK_URL || `${req.protocol}://${req.get('host')}/api/webhook-infinitepay`;
     const payload = {
       handle: INFINITE_HANDLE,
       items: [{ quantity: 1, price: priceInCents, description: `Créditos PrintFlow - R$ ${amount.toFixed(2)}` }],
       order_nsu,
       redirect_url: defaultRedirect,
-      webhook_url: process.env.WEBHOOK_URL || `${req.protocol}://${req.get('host')}/api/webhook-infinitepay`,
+      webhook_url: webhookUrl,
       payment_methods: ['pix'],
     };
+    console.log('[create-payment-link] payload:', { ...payload, webhook_url: webhookUrl.replace(/\/\/.*@/, '//***') });
 
     const resp = await fetchWithTimeout(`${INFINITE_API}/links`, {
       method: 'POST',
@@ -842,10 +845,12 @@ app.post('/api/create-payment-link', async (req, res) => {
 
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
+      console.error('[create-payment-link] infinitepay error:', resp.status, text);
       return res.status(502).json({ error: `InfinitePay recusou (${resp.status}): ${text.slice(0, 200)}` });
     }
 
     const data = await safeJson(resp);
+    console.log('[create-payment-link] infinitepay response:', { url: data?.url, order_nsu });
     if (!data?.url) return res.status(502).json({ error: 'Resposta inválida da InfinitePay' });
 
     const pending = readPendingForUser(user);
@@ -854,13 +859,14 @@ app.post('/api/create-payment-link', async (req, res) => {
 
     return res.json({ url: data.url, order_nsu });
   } catch (err) {
-    console.error('Create payment link error:', err);
+    console.error('[create-payment-link] error:', err);
     res.status(500).json({ error: 'Falha ao criar link de pagamento' });
   }
 });
 
 app.post('/api/check-payment', async (req, res) => {
   const { email, senha, order_nsu, slug, transaction_nsu } = req.body;
+  console.log('[check-payment] request:', { email, order_nsu, slug, transaction_nsu });
   if (!email || !senha || !order_nsu) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
   try {
     const user = await authenticateUser(email, senha);
@@ -871,6 +877,7 @@ app.post('/api/check-payment', async (req, res) => {
     if (!payment) return res.status(404).json({ error: 'Pagamento não encontrado' });
 
     if (payment.status === 'completed') {
+      console.log('[check-payment] already completed:', order_nsu);
       return res.json({ paid: true, amount: round2(payment.amount) });
     }
 
@@ -883,12 +890,16 @@ app.post('/api/check-payment', async (req, res) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(checkPayload),
       });
+      console.log('[check-payment] infinitepay response:', checkResp.status);
       if (checkResp.ok) {
         const checkData = await safeJson(checkResp);
+        console.log('[check-payment] check data:', checkData);
         if (checkData?.paid) {
           try {
             await addCreditsToUser(email, payment.amount, `Créditos via InfinitePay (${transaction_nsu || order_nsu})`);
+            console.log('[check-payment] credits added for:', email);
           } catch (e) {
+            console.error('[check-payment] addCreditsToUser failed:', e);
             return res.status(500).json({ error: `Pagamento confirmado, mas falha ao adicionar créditos: ${e.message}` });
           }
           payment.status = 'completed';
@@ -903,7 +914,7 @@ app.post('/api/check-payment', async (req, res) => {
 
     return res.json({ paid: false });
   } catch (err) {
-    console.error('Check payment error:', err);
+    console.error('[check-payment] error:', err);
     res.status(500).json({ error: 'Falha ao verificar pagamento' });
   }
 });
@@ -911,22 +922,28 @@ app.post('/api/check-payment', async (req, res) => {
 app.post('/api/webhook-infinitepay', async (req, res) => {
   try {
     const { order_nsu, transaction_nsu, capture_method } = req.body;
+    console.log('[webhook-infinitepay] received:', { order_nsu, transaction_nsu, capture_method });
     if (!order_nsu) return res.status(400).json({ error: 'Missing order_nsu' });
 
     const owner = await findPendingPaymentOwner(order_nsu);
     if (!owner || !owner.__id) {
-      console.warn('Webhook for unknown order:', order_nsu);
-      return res.json({ received: true });
+      console.warn('[webhook-infinitepay] unknown order:', order_nsu);
+      return res.status(404).json({ error: 'Order not found' });
     }
 
     const pending = readPendingForUser(owner);
     const payment = pending[order_nsu];
-    if (!payment || payment.status === 'completed') return res.json({ received: true });
+    if (!payment || payment.status === 'completed') {
+      console.log('[webhook-infinitepay] already completed or not found:', order_nsu);
+      return res.json({ received: true });
+    }
 
     try {
       await addCreditsToUser(payment.email, payment.amount, `Créditos via InfinitePay (${transaction_nsu || order_nsu})`);
+      console.log('[webhook-infinitepay] credits added for:', payment.email);
     } catch (e) {
-      console.error('Webhook: failed to add credits:', e);
+      console.error('[webhook-infinitepay] failed to add credits:', e);
+      return res.status(500).json({ error: 'Failed to add credits' });
     }
 
     payment.status = 'completed';
@@ -938,8 +955,8 @@ app.post('/api/webhook-infinitepay', async (req, res) => {
 
     return res.json({ received: true });
   } catch (err) {
-    console.error('Webhook error:', err);
-    return res.json({ received: true });
+    console.error('[webhook-infinitepay] error:', err);
+    return res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
 
