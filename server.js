@@ -813,7 +813,18 @@ const addCreditsToUser = async (targetEmail, amount, description) => {
 const readPendingForUser = (user) => parseJsonField(user.pagamentospendentes, {});
 
 const writePendingForUser = async (user, pending) => {
-  return updateUserRecord(user.__id, { ...user, pagamentospendentes: JSON.stringify(pending) });
+  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}/${user.__id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
+    body: JSON.stringify({ pagamentospendentes: JSON.stringify(pending) }),
+  });
+  console.log('[writePendingForUser] patch response:', resp.status);
+  if (!resp.ok && resp.status !== 204) {
+    const text = await resp.text().catch(() => '');
+    console.error('[writePendingForUser] patch failed:', text);
+    return false;
+  }
+  return true;
 };
 
 const findPendingPaymentOwner = async (order_nsu) => {
@@ -866,7 +877,12 @@ app.post('/api/create-payment-link', async (req, res) => {
 
     const pending = readPendingForUser(user);
     pending[order_nsu] = { email, amount, status: 'pending', createdAt: new Date().toISOString() };
-    await writePendingForUser(user, pending);
+    const saved = await writePendingForUser(user, pending);
+    if (!saved) {
+      console.error('[create-payment-link] Falha ao salvar pagamento pendente para:', user.email);
+      return res.status(500).json({ error: 'Falha ao registrar pagamento pendente' });
+    }
+    console.log('[create-payment-link] pending saved for:', user.email, 'order_nsu:', order_nsu);
 
     return res.json({ url: data.url, order_nsu });
   } catch (err) {
@@ -884,8 +900,12 @@ app.post('/api/check-payment', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
 
     const pending = readPendingForUser(user);
+    console.log('[check-payment] pending keys:', Object.keys(pending));
     const payment = pending[order_nsu];
-    if (!payment) return res.status(404).json({ error: 'Pagamento não encontrado' });
+    if (!payment) {
+      console.warn('[check-payment] payment NOT FOUND in pending:', order_nsu);
+      return res.status(404).json({ error: 'Pagamento não encontrado' });
+    }
 
     if (payment.status === 'completed') {
       console.log('[check-payment] already completed:', order_nsu);
