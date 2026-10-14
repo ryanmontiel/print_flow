@@ -123,7 +123,7 @@ export const formatBRL = (value: number) =>
 
 // Auth
 export const apiLogin = (email: string, senha: string) =>
-  request<{ message: string; displayName: string }>('/api/login', {
+  request<{ message: string; displayName: string; printColor: string; printDuplex: string }>('/api/login', {
     method: 'POST',
     body: { email, senha },
   })
@@ -305,6 +305,13 @@ export const apiReprocessPayment = (order_nsu: string) => {
   return request<{ paid: boolean; amount?: number; message: string }>('/api/reprocess-payment', {
     method: 'POST',
     body: { email, senha, order_nsu },
+  })
+}
+
+export const apiGetPrintPreferences = () => {
+  const { email, senha } = getCredentials()
+  return request<{ printColor: string; printDuplex: string }>('/api/user/print-preferences', {
+    params: { email, senha },
   })
 }
 

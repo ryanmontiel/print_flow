@@ -9,7 +9,7 @@ type User = {
 
 type AuthContextType = {
   user: User | null
-  login: (email: string, nome: string, remember?: boolean) => void
+  login: (email: string, nome: string, remember?: boolean, printColor?: 'color' | 'bw', printDuplex?: 'single' | 'duplex') => void
   logout: () => void
   isLoading: boolean
 }

@@ -151,7 +151,7 @@ const html = `<div style="font-family:system-ui,-apple-system,sans-serif;padding
 // ── DB helpers ───────────────────────────────────────────────────────
 
 const listAllRecords = async () => {
-  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_NAME}`, {
+  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/${SHEET_ORG}/${DATATABLE_NAME}`, {
     headers: { 'Authorization': getBasicAuthHeader() },
   });
   if (!resp.ok) return [];
@@ -166,7 +166,7 @@ const findUserByEmail = async (email) => {
 };
 
 const createUserRecord = async (fields) => {
-  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_NAME}`, {
+  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/${SHEET_ORG}/${DATATABLE_NAME}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
     body: JSON.stringify(fields),
@@ -177,7 +177,7 @@ const createUserRecord = async (fields) => {
 const updateUserRecord = async (recordId, fields) => {
   const clean = { ...fields };
   delete clean.__id;
-  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_NAME}/${recordId}`, {
+  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/${SHEET_ORG}/${DATATABLE_NAME}/${recordId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
     body: JSON.stringify(clean),
@@ -362,7 +362,8 @@ app.post('/api/login', async (req, res) => {
       return res.status(403).json({ error: 'Email não verificado. Verifique sua caixa de entrada.' });
     }
     await updateUserRecord(user.__id, { ...user, ultimologinem: new Date().toISOString() });
-    res.json({ message: 'Login efetuado com sucesso', displayName: user.nome || normEmail });
+    const prefs = parsePrinterPreferences(user.printerpreferences);
+    res.json({ message: 'Login efetuado com sucesso', displayName: user.nome || normEmail, printColor: prefs.color, printDuplex: prefs.duplex });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Falha no login' });
