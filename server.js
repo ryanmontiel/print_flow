@@ -306,7 +306,7 @@ app.post('/api/verify-email', async (req, res) => {
   try {
     const user = await findUserByEmail(normEmail);
     if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
-    if (user.verificado === 'true') return res.json({ message: 'Email já verificado' });
+    if (String(user.verificado).toLowerCase() === 'true') return res.json({ message: 'Email já verificado' });
 
     const storedCode = String(user.codigoverificacao || '');
     const expires = new Date(user.codigoexpiraem || 0);
@@ -336,7 +336,7 @@ app.post('/api/resend-code', async (req, res) => {
   try {
     const user = await findUserByEmail(normEmail);
     if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
-    if (user.verificado === 'true') return res.json({ message: 'Email já verificado' });
+    if (String(user.verificado).toLowerCase() === 'true') return res.json({ message: 'Email já verificado' });
 
     const code = generateCode();
     const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
@@ -358,7 +358,7 @@ app.post('/api/login', async (req, res) => {
   try {
     const user = await authenticateUser(normEmail, senha);
     if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
-    if (user.verificado !== 'true') {
+    if (String(user.verificado).toLowerCase() !== 'true') {
       return res.status(403).json({ error: 'Email não verificado. Verifique sua caixa de entrada.' });
     }
     await updateUserRecord(user.__id, { ...user, ultimologinem: new Date().toISOString() });
