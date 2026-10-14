@@ -21,7 +21,21 @@ export default function KioskPrintPage() {
   const [manualPages, setManualPages] = useState(1)
   const [copies, setCopies] = useState(1)
   const [credits, setCredits] = useState(0)
-  const [config, setConfig] = useState<PrintConfig>({ color: 'bw', duplex: 'single' })
+  const [config, setConfig] = useState<PrintConfig>(() => {
+    try {
+      const saved = localStorage.getItem('pf-kiosk-print-config')
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return { color: 'bw', duplex: 'single' }
+  })
+
+  const setConfigPersist = (updater: PrintConfig | ((prev: PrintConfig) => PrintConfig)) => {
+    setConfig(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      try { localStorage.setItem('pf-kiosk-print-config', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
   const [loading, setLoading] = useState(true)
   const [printing, setPrinting] = useState(false)
   const [error, setError] = useState('')
@@ -85,7 +99,7 @@ export default function KioskPrintPage() {
     setPdfSelectedPages(new Set())
     setManualPages(1)
     setCopies(1)
-    setConfig({ color: 'bw', duplex: 'single' })
+    setConfigPersist({ color: 'bw', duplex: 'single' })
     setSuccess('')
     setError('')
     setStep('simulate')
@@ -346,7 +360,7 @@ export default function KioskPrintPage() {
                     </label>
                     <select
                       value={config.color}
-                      onChange={e => setConfig(c => ({ ...c, color: e.target.value as PrintConfig['color'] }))}
+                      onChange={e => setConfigPersist(c => ({ ...c, color: e.target.value as PrintConfig['color'] }))}
                       className="w-full px-3 py-3 border border-gray-300 rounded-xl text-base font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
                     >
                       <option value="bw">Preto e branco</option>
@@ -359,7 +373,7 @@ export default function KioskPrintPage() {
                     </label>
                     <select
                       value={config.duplex}
-                      onChange={e => setConfig(c => ({ ...c, duplex: e.target.value as PrintConfig['duplex'] }))}
+                      onChange={e => setConfigPersist(c => ({ ...c, duplex: e.target.value as PrintConfig['duplex'] }))}
                       className="w-full px-3 py-3 border border-gray-300 rounded-xl text-base font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
                     >
                       <option value="single">Simples</option>
