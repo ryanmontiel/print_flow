@@ -58,7 +58,7 @@ const upload = multer({
 // ── Sheetlabs Admin API ──────────────────────────────────────────────
 const ADMIN_API_BASE = 'https://sheetlabs.com';
 const SHEET_ORG = 'PTFL';
-const DATATABLE_ID = process.env.DATATABLE_ID || '38080';
+const DATATABLE_NAME = 'printflow';
 
 const getBasicAuthHeader = () => {
   const b64 = Buffer.from(`${process.env.SHEET_USERNAME}:${process.env.SHEET_TOKEN}`).toString('base64');
@@ -151,7 +151,7 @@ const html = `<div style="font-family:system-ui,-apple-system,sans-serif;padding
 // ── DB helpers ───────────────────────────────────────────────────────
 
 const listAllRecords = async () => {
-  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}`, {
+  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_NAME}`, {
     headers: { 'Authorization': getBasicAuthHeader() },
   });
   if (!resp.ok) return [];
@@ -166,7 +166,7 @@ const findUserByEmail = async (email) => {
 };
 
 const createUserRecord = async (fields) => {
-  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}`, {
+  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_NAME}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
     body: JSON.stringify(fields),
@@ -177,7 +177,7 @@ const createUserRecord = async (fields) => {
 const updateUserRecord = async (recordId, fields) => {
   const clean = { ...fields };
   delete clean.__id;
-  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}/${recordId}`, {
+  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_NAME}/${recordId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
     body: JSON.stringify(clean),
@@ -187,6 +187,18 @@ const updateUserRecord = async (recordId, fields) => {
 
 const parseJsonField = (value, fallback) => {
   try { return JSON.parse(value || JSON.stringify(fallback)); } catch { return fallback; }
+};
+
+const parsePrinterPreferences = (value) => {
+  try {
+    const parsed = JSON.parse(value || '{}');
+    return {
+      color: parsed.color || 'bw',
+      duplex: parsed.duplex || 'single',
+    };
+  } catch {
+    return { color: 'bw', duplex: 'single' };
+  }
 };
 
 // ── Auth helper ──────────────────────────────────────────────────────
@@ -598,6 +610,41 @@ app.post('/api/credits/add', async (req, res) => {
   }
 });
 
+// ── Print Preferences ────────────────────────────────────────────────
+app.post('/api/user/print-preferences', async (req, res) => {
+  const { email, senha, printColor, printDuplex } = req.body;
+  if (!email || !senha) return res.status(400).json({ error: 'Credenciais obrigatórias' });
+  if (!['color', 'bw'].includes(printColor) || !['single', 'duplex'].includes(printDuplex)) {
+    return res.status(400).json({ error: 'Valores inválidos para preferências' });
+  }
+  try {
+    const user = await authenticateUser(email, senha);
+    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+
+    const prefs = JSON.stringify({ color: printColor, duplex: printDuplex });
+    const ok = await updateUserRecord(user.__id, { ...user, printerpreferences: prefs });
+    if (!ok) throw new Error('Falha ao salvar preferências');
+    res.json({ message: 'Preferências salvas', printColor, printDuplex });
+  } catch (err) {
+    console.error('Save print preferences error:', err);
+    res.status(500).json({ error: 'Falha ao salvar preferências' });
+  }
+});
+
+app.get('/api/user/print-preferences', async (req, res) => {
+  const { email, senha } = req.query;
+  if (!email || !senha) return res.status(400).json({ error: 'Credenciais obrigatórias' });
+  try {
+    const user = await authenticateUser(email, senha);
+    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const prefs = parsePrinterPreferences(user.printerpreferences);
+    res.json({ printColor: prefs.color, printDuplex: prefs.duplex });
+  } catch (err) {
+    console.error('Get print preferences error:', err);
+    res.status(500).json({ error: 'Falha ao obter preferências' });
+  }
+});
+
 // ── Print ────────────────────────────────────────────────────────────
 app.post('/api/print', async (req, res) => {
   const { email, senha, documentId, documentName, pages, cost, color, duplex } = req.body;
@@ -606,8 +653,9 @@ app.post('/api/print', async (req, res) => {
     const user = await authenticateUser(email, senha);
     if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
 
-    const printColor = color === 'color' ? 'color' : 'bw';
-    const printDuplex = duplex === 'duplex' ? 'duplex' : 'single';
+    const prefs = parsePrinterPreferences(user.printerpreferences);
+    const printColor = color === 'color' ? 'color' : (color === 'bw' ? 'bw' : prefs.color);
+    const printDuplex = duplex === 'duplex' ? 'duplex' : (duplex === 'single' ? 'single' : prefs.duplex);
     const printCost = round2(Number(cost) > 0 ? cost : getUnitPrice(printColor, printDuplex) * (Number(pages) || 1));
     if (!(printCost > 0)) return res.status(400).json({ error: 'Valor de impressão inválido' });
 
@@ -796,7 +844,7 @@ const addCreditsToUser = async (targetEmail, amount, description) => {
   transactions.push({ amount: creditAmount, description: description || 'Créditos via pagamento', type: 'credit', createdAt: new Date().toISOString() });
 
   console.log('[addCreditsToUser] updating:', { userId: user.__id, email: targetEmail, current, newBalance, transactionsCount: transactions.length });
-  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}/${user.__id}`, {
+  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_NAME}/${user.__id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
     body: JSON.stringify({ creditos: String(newBalance), transacoes: JSON.stringify(transactions) }),
@@ -813,7 +861,7 @@ const addCreditsToUser = async (targetEmail, amount, description) => {
 const readPendingForUser = (user) => parseJsonField(user.pagamentospendentes, {});
 
 const writePendingForUser = async (user, pending) => {
-  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_ID}/${user.__id}`, {
+  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_NAME}/${user.__id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
     body: JSON.stringify({ pagamentospendentes: JSON.stringify(pending) }),

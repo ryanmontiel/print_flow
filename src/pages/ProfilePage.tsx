@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
+import { useState, useEffect } from 'react'
 import { LogOut, Sun, Moon, Printer, FileText } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
@@ -8,10 +9,49 @@ export default function ProfilePage() {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
+  const [printColor, setPrintColor] = useState<'color' | 'bw'>('bw')
+  const [printDuplex, setPrintDuplex] = useState<'single' | 'duplex'>('single')
 
   const handleLogout = () => {
     logout()
     navigate('/login')
+  }
+
+  useEffect(() => {
+    if (user?.printColor) setPrintColor(user.printColor)
+    if (user?.printDuplex) setPrintDuplex(user.printDuplex)
+  }, [user])
+
+  const handleColorChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value as 'color' | 'bw'
+    setPrintColor(value)
+    try {
+      const { email, senha } = JSON.parse(localStorage.getItem('userCredentials') || '{}')
+      if (!email || !senha) return
+      await fetch('/api/user/print-preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, senha, printColor: value, printDuplex }),
+      })
+    } catch (err) {
+      console.error('Save color preference error:', err)
+    }
+  }
+
+  const handleDuplexChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value as 'single' | 'duplex'
+    setPrintDuplex(value)
+    try {
+      const { email, senha } = JSON.parse(localStorage.getItem('userCredentials') || '{}')
+      if (!email || !senha) return
+      await fetch('/api/user/print-preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, senha, printColor, printDuplex: value }),
+      })
+    } catch (err) {
+      console.error('Save duplex preference error:', err)
+    }
   }
 
   const prefGroups = [
@@ -33,33 +73,41 @@ export default function ProfilePage() {
         },
       ],
     },
-    {
-      title: 'Preferências de Impressão',
-      items: [
-        {
-          icon: Printer,
-          label: 'Cor',
-          description: 'Impressão colorida',
-          action: (
-            <select className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm border-0 outline-none focus:ring-2 focus:ring-primary-500">
-              <option>Colorido</option>
-              <option>Preto e branco</option>
-            </select>
-          ),
-        },
-        {
-          icon: FileText,
-          label: 'Frente e verso',
-          description: 'Modo de impressão',
-          action: (
-            <select className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm border-0 outline-none focus:ring-2 focus:ring-primary-500">
-              <option>Simples</option>
-              <option>Frente e verso</option>
-            </select>
-          ),
-        },
-      ],
-    },
+{
+            title: 'Preferências de Impressão',
+            items: [
+              {
+                icon: Printer,
+                label: 'Cor',
+                description: 'Impressão colorida',
+                action: (
+                  <select
+                    value={printColor}
+                    onChange={handleColorChange}
+                    className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm border-0 outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="color">Colorido</option>
+                    <option value="bw">Preto e branco</option>
+                  </select>
+                ),
+              },
+              {
+                icon: FileText,
+                label: 'Frente e verso',
+                description: 'Modo de impressão',
+                action: (
+                  <select
+                    value={printDuplex}
+                    onChange={handleDuplexChange}
+                    className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm border-0 outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="single">Simples</option>
+                    <option value="duplex">Frente e verso</option>
+                  </select>
+                ),
+              },
+            ],
+          },
   ]
 
   return (

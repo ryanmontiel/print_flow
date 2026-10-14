@@ -149,6 +149,13 @@ export const apiPrintComplete = (jobId: string) =>
     body: { jobId },
   })
 
+export const apiGetPrintPreferences = () => {
+  const { email, senha } = getCredentials()
+  return request<{ printColor: string; printDuplex: string }>('/api/user/print-preferences', {
+    params: { email, senha },
+  })
+}
+
 export const apiHandleShare = (notificationId: string, action: 'accepted') => {
   const { email, senha } = getCredentials()
   return request<{ message: string }>('/api/handle-share', {

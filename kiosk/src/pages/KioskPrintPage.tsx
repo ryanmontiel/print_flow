@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import PdfPreview from '../components/PdfPreview'
 import ImagePreview from '../components/ImagePreview'
-import { apiGetDocuments, apiGetCredits, apiPrintStart, apiPrintStatus, apiPrintComplete, getPrintPrice, printConfigLabel, formatBRL, type StoredDocument, type PrintConfig } from '../api'
+import { apiGetDocuments, apiGetCredits, apiPrintStart, apiPrintStatus, apiPrintComplete, apiGetPrintPreferences, getPrintPrice, printConfigLabel, formatBRL, type StoredDocument, type PrintConfig } from '../api'
 
 type Step = 'select' | 'simulate' | 'printing' | 'done' | 'error'
 
@@ -21,13 +21,7 @@ export default function KioskPrintPage() {
   const [manualPages, setManualPages] = useState(1)
   const [copies, setCopies] = useState(1)
   const [credits, setCredits] = useState(0)
-  const [config, setConfig] = useState<PrintConfig>(() => {
-    try {
-      const saved = localStorage.getItem('pf-kiosk-print-config')
-      if (saved) return JSON.parse(saved)
-    } catch {}
-    return { color: 'bw', duplex: 'single' }
-  })
+  const [config, setConfig] = useState<PrintConfig>({ color: 'bw', duplex: 'single' })
 
   const setConfigPersist = (updater: PrintConfig | ((prev: PrintConfig) => PrintConfig)) => {
     setConfig(prev => {
@@ -75,14 +69,17 @@ export default function KioskPrintPage() {
     setLoading(true)
     setError('')
     try {
-      const [docRes, credRes] = await Promise.all([
+      const [docRes, credRes, prefRes] = await Promise.all([
         apiGetDocuments(),
         apiGetCredits().catch(() => ({ credits: 0 })),
+        apiGetPrintPreferences().catch(() => ({ printColor: 'bw', printDuplex: 'single' })),
       ])
       // Show all documents for the user
       const accepted = docRes.documents
       setDocs(accepted)
       setCredits(credRes.credits)
+      // Apply print preferences from main server
+      setConfigPersist({ color: prefRes.printColor as 'bw' | 'color', duplex: prefRes.printDuplex as 'single' | 'duplex' })
       // Pre-fetch document files in background so cache warms up
       accepted.forEach(doc => {
         fetch(doc.url, { priority: 'low', cache: 'force-cache' }).catch(() => {})
