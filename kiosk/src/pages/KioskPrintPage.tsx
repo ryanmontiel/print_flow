@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   Printer, FileText, LogOut, Loader2, CheckCircle, AlertCircle,
-  ChevronLeft, File, Image, RefreshCw
+  ChevronLeft, File, Image, RefreshCw, XCircle
 } from 'lucide-react'
 import PdfPreview from '../components/PdfPreview'
 import ImagePreview from '../components/ImagePreview'
-import { apiGetDocuments, apiGetCredits, apiPrint, apiCupsPrint, getPrintPrice, printConfigLabel, formatBRL, type StoredDocument, type PrintConfig } from '../api'
+import { apiGetDocuments, apiGetCredits, apiPrintStart, apiPrintStatus, apiPrintComplete, getPrintPrice, printConfigLabel, formatBRL, type StoredDocument, type PrintConfig } from '../api'
 
-type Step = 'select' | 'simulate' | 'done'
+type Step = 'select' | 'simulate' | 'printing' | 'done' | 'error'
 
 export default function KioskPrintPage() {
   const { docId } = useParams()
@@ -27,6 +27,8 @@ export default function KioskPrintPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [step, setStep] = useState<Step>('select')
+  const [printJobId, setPrintJobId] = useState<string | null>(null)
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const isPdf = selected?.mimetype === 'application/pdf'
   const selectedPageCount = isPdf ? pdfSelectedPages.size : manualPages
@@ -94,32 +96,74 @@ export default function KioskPrintPage() {
     setPrinting(true)
     setError('')
     setSuccess('')
+    setStep('printing')
 
     try {
-      let docIdToPrint = selected.id
-      let docNameToPrint = selected.name
-
-      // 1. Debit credits via main server
-      const res = await apiPrint(docIdToPrint, docNameToPrint, totalPrintedPages, totalCost, config.color, config.duplex)
-      setCredits(res.credits)
-
-      // 2. Send to CUPS printer
-      let cupsMsg = ''
-      try {
-        const cupsRes = await apiCupsPrint(selected.url, config.color, config.duplex)
-        cupsMsg = cupsRes.jobId ? ` (job #${cupsRes.jobId})` : ''
-      } catch (cupsErr) {
-        cupsMsg = '. Atenção: falha ao enviar para impressora, créditos já foram debitados'
-      }
-
-      setStep('done')
-      setSuccess(`Impressão de ${totalPrintedPages} página(s) concluída${cupsMsg}!`)
+      const res = await apiPrintStart({
+        fileUrl: selected.url,
+        color: config.color,
+        duplex: config.duplex,
+        documentId: selected.id,
+        documentName: selected.name || selected.originalname || 'Documento',
+        pages: totalPrintedPages,
+        cost: totalCost,
+        email: localStorage.getItem('pf-kiosk-credentials') ? JSON.parse(localStorage.getItem('pf-kiosk-credentials')!).email : '',
+        senha: localStorage.getItem('pf-kiosk-credentials') ? JSON.parse(localStorage.getItem('pf-kiosk-credentials')!).senha : '',
+      })
+      setPrintJobId(res.jobId)
+      startPolling(res.jobId)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao imprimir')
-    } finally {
       setPrinting(false)
+      setStep('error')
+      setError(err instanceof Error ? err.message : 'Erro ao iniciar impressão')
     }
   }
+
+  const startPolling = (jobId: string) => {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+    
+    pollIntervalRef.current = setInterval(async () => {
+      try {
+        const res = await apiPrintStatus(jobId)
+        if (res.status === 'completed') {
+          clearInterval(pollIntervalRef.current!)
+          await completePrint(jobId)
+        }
+      } catch (err) {
+        console.error('Polling error:', err)
+      }
+    }, 3000)
+  }
+
+  const completePrint = async (jobId: string) => {
+    try {
+      const res = await apiPrintComplete(jobId)
+      setCredits(res.credits)
+      setPrinting(false)
+      setStep('done')
+      setSuccess(`Impressão concluída! Créditos debitados: ${formatBRL(res.credits)}`)
+    } catch (err) {
+      handlePrintError(err instanceof Error ? err.message : 'Falha ao debitar créditos')
+    }
+  }
+
+  const handlePrintError = (message: string) => {
+    clearInterval(pollIntervalRef.current!)
+    setPrinting(false)
+    setStep('error')
+    setError(message)
+  }
+
+  const cleanupPolling = () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
+    }
+  }
+
+  useEffect(() => {
+    return () => cleanupPolling()
+  }, [])
 
   const handleLogout = () => {
     if (typeof window.__kioskLogout === 'function') {
@@ -422,6 +466,63 @@ export default function KioskPrintPage() {
               >
                 {printing ? <Loader2 size={22} className="animate-spin" /> : <Printer size={22} />}
                 {printing ? 'Imprimindo...' : `Imprimir (${formatBRL(totalCost)})`}
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {step === 'printing' && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center py-16"
+          >
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-primary-100 rounded-full mb-6 animate-pulse">
+              <Printer size={40} className="text-primary-600" />
+            </div>
+            <h2 className="font-heading text-2xl font-bold text-gray-800 mb-2">Aguardando impressão...</h2>
+            <p className="text-gray-500 mb-8">Enviamos o documento para a impressora. Por favor, aguarde a conclusão.</p>
+            <div className="flex justify-center gap-2">
+              <div className="w-4 h-4 bg-primary-200 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <div className="w-4 h-4 bg-primary-200 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <div className="w-4 h-4 bg-primary-200 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </div>
+            <p className="mt-6 text-sm text-gray-400">Verificando status a cada 3 segundos...</p>
+            {printJobId && <p className="mt-2 text-xs text-gray-400 font-mono">Job ID: {printJobId}</p>}
+          </motion.div>
+        )}
+
+        {step === 'error' && error && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center py-16"
+          >
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-red-100 rounded-full mb-6">
+              <XCircle size={40} className="text-red-600" />
+            </div>
+            <h2 className="font-heading text-2xl font-bold text-gray-800 mb-4">Algo deu errado durante a impressão</h2>
+            <div className="max-w-md mx-auto mb-8 text-left bg-red-50 border border-red-200 rounded-xl p-6 text-red-700">
+              <p className="mb-4">Por favor, avise nosso suporte sobre o ocorrido e desculpe pelo inconveniente.</p>
+              <p className="font-medium mb-2">Nenhum crédito foi debitado no processo.</p>
+              <div className="mt-6 pt-4 border-t border-red-200 space-y-1 text-sm">
+                <p><strong>Contato:</strong></p>
+                <p>Ryan - 51 99768-6007</p>
+                <p>Luiza - 51 99989-5586</p>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => { setStep('simulate'); setError(''); setPrintJobId(null) }}
+                className="px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl transition-colors"
+              >
+                Tentar novamente
+              </button>
+              <button
+                onClick={handleBack}
+                className="px-6 py-3 border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-colors"
+              >
+                Voltar
               </button>
             </div>
           </motion.div>

@@ -125,6 +125,30 @@ export const apiCupsPrint = (fileUrl: string, color: 'bw' | 'color' = 'bw', dupl
   })
 }
 
+export const apiPrintStart = (params: {
+  fileUrl: string
+  color: 'bw' | 'color'
+  duplex: 'single' | 'duplex'
+  documentId: string
+  documentName: string
+  pages: number
+  cost: number
+  email: string
+  senha: string
+}) => request<{ message: string; jobId: string }>('/api/print/start', {
+  method: 'POST',
+  body: params,
+})
+
+export const apiPrintStatus = (jobId: string) =>
+  request<{ status: 'pending' | 'printing' | 'completed'; jobId: string }>(`/api/print/status/${jobId}`)
+
+export const apiPrintComplete = (jobId: string) =>
+  request<{ message: string; credits: number }>('/api/print/complete', {
+    method: 'POST',
+    body: { jobId },
+  })
+
 export const apiHandleShare = (notificationId: string, action: 'accepted') => {
   const { email, senha } = getCredentials()
   return request<{ message: string }>('/api/handle-share', {

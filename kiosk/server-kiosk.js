@@ -19,6 +19,9 @@ const CUPS_PRINTER = process.env.CUPS_PRINTER || 'printflow';
 const CUPS_IPP_URL = process.env.CUPS_IPP_URL || '';
 const CACHE_DIR = path.join(__dirname, 'cache');
 
+// In-memory job tracking (in production, use Redis or similar)
+const printJobs = new Map();
+
 // Ensure cache directory exists
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -68,7 +71,162 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
-// ── CUPS print endpoint ──────────────────────────────────────────────
+// ── CUPS print endpoints ──────────────────────────────────────────────
+
+// Start print job (no credit debit yet)
+app.post('/api/print/start', async (req, res) => {
+  const { fileUrl, color, duplex, documentId, documentName, pages, cost, email, senha } = req.body;
+  if (!fileUrl) return res.status(400).json({ error: 'fileUrl é obrigatório' });
+  if (!documentId || !email || !senha) return res.status(400).json({ error: 'documentId, email e senha são obrigatórios' });
+
+  try {
+    const absoluteUrl = fileUrl.startsWith('http') ? fileUrl : `${MAIN_SERVER}${fileUrl}`;
+    const fileResponse = await fetch(absoluteUrl);
+    if (!fileResponse.ok) throw new Error('Falha ao baixar o arquivo do servidor principal');
+
+    const buffer = Buffer.from(await fileResponse.arrayBuffer());
+    const ext = path.extname(fileUrl) || '.pdf';
+    const tempFile = path.join(os.tmpdir(), `pf-${Date.now()}${ext}`);
+    fs.writeFileSync(tempFile, buffer);
+
+    const dest = CUPS_IPP_URL || CUPS_PRINTER;
+    const colorModel = color === 'color' ? 'Color' : 'Gray';
+    const sides = duplex === 'duplex' ? 'two-sided-long-edge' : 'one-sided';
+    const cmd = `lp -d "${dest}" -o ColorModel=${colorModel} -o sides=${sides} "${tempFile}"`;
+    
+    exec(cmd, (error, stdout, stderr) => {
+      try { fs.unlinkSync(tempFile); } catch {}
+
+      if (error) {
+        console.error('CUPS error:', stderr || error.message);
+        return res.status(500).json({ error: `Falha ao enviar para impressora: ${stderr || error.message}` });
+      }
+
+      const jobId = stdout?.trim() || '';
+      console.log('CUPS job sent:', jobId);
+
+      // Store job metadata for polling
+      printJobs.set(jobId, {
+        jobId,
+        documentId,
+        documentName,
+        pages,
+        cost,
+        color,
+        duplex,
+        email,
+        senha,
+        status: 'pending',
+        createdAt: Date.now(),
+      });
+
+      res.json({ message: 'Documento enviado para impressão', jobId });
+    });
+  } catch (err) {
+    console.error('CUPS print error:', err.message);
+    res.status(500).json({ error: `Erro ao processar impressão CUPS: ${err.message}` });
+  }
+});
+
+// Poll print job status
+app.get('/api/print/status/:jobId', async (req, res) => {
+  const { jobId } = req.params;
+  const job = printJobs.get(jobId);
+  
+  if (!job) {
+    return res.status(404).json({ error: 'Job não encontrado' });
+  }
+
+  // Check CUPS status via lpstat
+  exec(`lpstat -o ${CUPS_PRINTER} -l`, (error, stdout, stderr) => {
+    if (error) {
+      console.error('lpstat error:', stderr);
+      // Don't fail - maybe CUPS is temporarily unavailable
+      return res.json({ status: job.status, jobId });
+    }
+
+    // Parse lpstat output to find our job
+    const lines = stdout.split('\n');
+    let jobFound = false;
+    let jobCompleted = false;
+
+    for (const line of lines) {
+      if (line.includes(job.jobId)) {
+        jobFound = true;
+        // Check if job is completed (no longer in queue or has "completed" status)
+        if (!line.includes('pending') && !line.includes('processing') && !line.includes('held')) {
+          jobCompleted = true;
+        }
+        break;
+      }
+    }
+
+    if (!jobFound) {
+      // Job not in queue anymore - assume completed
+      jobCompleted = true;
+    }
+
+    if (jobCompleted && job.status !== 'completed') {
+      job.status = 'completed';
+      printJobs.set(job.jobId, job);
+      console.log(`Job ${job.jobId} completed`);
+    } else if (jobFound) {
+      job.status = 'printing';
+      printJobs.set(job.jobId, job);
+    }
+
+    res.json({ status: job.status, jobId: job.jobId });
+  });
+});
+
+// Complete print job (debit credits on main server)
+app.post('/api/print/complete', async (req, res) => {
+  const { jobId } = req.body;
+  const job = printJobs.get(jobId);
+  
+  if (!job) {
+    return res.status(404).json({ error: 'Job não encontrado' });
+  }
+
+  if (job.status !== 'completed') {
+    return res.status(400).json({ error: 'Job ainda não concluído' });
+  }
+
+  try {
+    // Call main server to debit credits
+    const response = await fetch(`${MAIN_SERVER}/api/print`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: job.email,
+        senha: job.senha,
+        documentId: job.documentId,
+        documentName: job.documentName,
+        pages: job.pages,
+        cost: job.cost,
+        color: job.color,
+        duplex: job.duplex,
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Main server error: ${response.status} - ${text}`);
+    }
+
+    const data = await response.json();
+    
+    // Clean up job
+    printJobs.delete(jobId);
+    
+    res.json({ message: 'Impressão concluída e créditos debitados', credits: data.credits });
+  } catch (err) {
+    console.error('Complete print error:', err.message);
+    res.status(500).json({ error: `Falha ao debitar créditos: ${err.message}` });
+  }
+});
+
+// Legacy CUPS print endpoint (kept for compatibility)
 app.post('/api/cups-print', async (req, res) => {
   const { fileUrl, color, duplex } = req.body;
   if (!fileUrl) return res.status(400).json({ error: 'fileUrl é obrigatório' });
@@ -83,7 +241,6 @@ app.post('/api/cups-print', async (req, res) => {
     const tempFile = path.join(os.tmpdir(), `pf-${Date.now()}${ext}`);
     fs.writeFileSync(tempFile, buffer);
 
-    // Send to CUPS with color and sides options
     const dest = CUPS_IPP_URL || CUPS_PRINTER;
     const colorModel = color === 'color' ? 'Color' : 'Gray';
     const sides = duplex === 'duplex' ? 'two-sided-long-edge' : 'one-sided';
@@ -145,7 +302,7 @@ app.all('/uploads/*', async (req, res) => {
 // Proxy all /api requests to the main server
 app.all('/api/*', async (req, res) => {
   // Skip internal routes
-  if (req.path === '/api/health') return;
+  if (req.path === '/api/health' || req.path.startsWith('/api/print/')) return;
 
   try {
     const targetUrl = `${MAIN_SERVER}${req.originalUrl}`;
