@@ -19,15 +19,18 @@ export default function DocumentsPage() {
 
   useEffect(() => { loadDocuments() }, [])
 
-  const loadDocuments = async () => {
+const loadDocuments = async () => {
     setLoading(true)
     setError('')
     try {
+      console.log('Loading documents...')
       const res = await apiGetDocuments()
-      setDocuments(res.documents || [])
+      console.log('Documents loaded:', res.documents)
+      setDocuments(res.documents)
     } catch (err) {
+      console.error('Load documents error:', err)
       setError(err instanceof Error ? err.message : 'Erro ao carregar documentos')
-    } finally {
+} finally {
       setLoading(false)
     }
   }
@@ -42,10 +45,13 @@ export default function DocumentsPage() {
     }
     setUploading(true)
     try {
+      console.log('Uploading file:', file.name, file.size)
       const result = await apiUploadFile(file)
+      console.log('Upload result:', result)
       setNamingDoc(result.file)
       setDocName(result.file.originalname.replace(/\.[^/.]+$/, ''))
     } catch (err) {
+      console.error('Upload error:', err)
       setError(err instanceof Error ? err.message : 'Erro no upload')
     } finally {
       setUploading(false)
@@ -56,11 +62,15 @@ export default function DocumentsPage() {
   const handleSaveDocument = async () => {
     if (!namingDoc || !docName.trim()) return
     try {
-      await apiAddDocument(docName.trim(), namingDoc)
+      console.log('Saving document:', { docName: docName.trim(), namingDoc })
+      const res = await apiAddDocument(docName.trim(), namingDoc)
+      console.log('Add document response:', res)
       setNamingDoc(null)
       setDocName('')
       await loadDocuments()
+      console.log('Documents reloaded')
     } catch (err) {
+      console.error('Save document error:', err)
       setError(err instanceof Error ? err.message : 'Erro ao salvar documento')
     }
   }
