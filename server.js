@@ -9,8 +9,6 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import { handleUpload } from '@vercel/blob/client';
-import { del } from '@vercel/blob';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -456,53 +454,6 @@ app.get('/uploads/:file', (req, res) => {
 });
 
 // ── Vercel Blob (client-side uploads, sem limite de 4.5MB) ────────────
-const blobAllowedContentTypes = [...allowedMimes, 'image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-
-app.post('/api/blob/upload', async (req, res) => {
-  try {
-    const jsonResponse = await handleUpload({
-      body: req.body,
-      request: req,
-      onBeforeGenerateToken: async (_pathname, clientPayload) => {
-        let email = '', senha = '';
-        try {
-          const p = JSON.parse(clientPayload || '{}');
-          email = p.email || '';
-          senha = p.senha || '';
-        } catch {}
-        const user = await authenticateUser(email, senha);
-        if (!user) throw new Error('Não autenticado');
-        return {
-          allowedContentTypes: blobAllowedContentTypes,
-          addRandomSuffix: true,
-          maximumSizeInBytes: 50 * 1024 * 1024,
-          tokenPayload: JSON.stringify({ email }),
-        };
-      },
-      onUploadCompleted: async () => {},
-    });
-    return res.json(jsonResponse);
-  } catch (err) {
-    console.error('Blob upload error:', err);
-    return res.status(400).json({ error: err.message });
-  }
-});
-
-app.post('/api/blob/delete', async (req, res) => {
-  const { email, senha, url } = req.body || {};
-  if (!email || !senha) return res.status(400).json({ error: 'Credenciais ausentes' });
-  if (!url) return res.status(400).json({ error: 'URL ausente' });
-  try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
-    if (String(url).includes('blob.vercel-storage.com')) await del(String(url));
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('Blob delete error:', err);
-    res.status(500).json({ error: 'Falha ao excluir arquivo' });
-  }
-});
-
 // ── Add document ─────────────────────────────────────────────────────
 app.post('/api/add-document', async (req, res) => {
   const { email, senha, documentName, filename, originalname, mimetype, size, url } = req.body;

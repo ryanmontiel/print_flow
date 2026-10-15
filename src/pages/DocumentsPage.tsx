@@ -68,8 +68,7 @@ export default function DocumentsPage() {
   const handleDelete = async (id: string) => {
     setDeletingId(id)
     try {
-      const doc = documents.find(d => d.id === id)
-      await apiDeleteDocument(id, doc?.url)
+      await apiDeleteDocument(id)
       setDocuments(prev => prev.filter(d => d.id !== id))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao excluir')
