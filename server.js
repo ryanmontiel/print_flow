@@ -11,6 +11,7 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import { handleUpload } from '@vercel/blob/client';
 import { del } from '@vercel/blob';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,6 +81,19 @@ const fetchWithTimeout = async (url, options = {}) => {
 const safeJson = async (r) => {
   try { return await r.json(); } catch { return null; }
 };
+
+// ── Cloudflare R2 (S3-compatível) ─────────────────────────────────────
+const r2 = new S3Client({
+  region: 'auto',
+  endpoint: process.env.R2_ENDPOINT || 'https://8b212dd9226f263510ae6a57c1bed66e.r2.cloudflarestorage.com',
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || 'edfaaf40cb5268f69c7841203ff43e83',
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '1bfe8926b41d72cf5ebdb2b11d96ab467b5849df9eaab609d934a90f8405faf2',
+  },
+});
+
+const R2_BUCKET = process.env.R2_BUCKET || 'printflow';
+const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || '';
 
 // ── Email (Gmail SMTP via Nodemailer) ───────────────────────────────
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
@@ -400,53 +414,19 @@ app.post('/api/documents', async (req, res) => {
 });
 
 // ── Upload (external host chain) ──────────────────────────────────────
-const UPLOAD_HOSTS = [
-  {
-    name: 'uguu',
-    upload: async (formData, blob, fileName) => {
-      formData.append('files[]', blob, fileName);
-      const resp = await fetch('https://uguu.se/upload', { method: 'POST', body: formData, signal: AbortSignal.timeout(12000) });
-      if (!resp.ok) return { url: null, detail: `status ${resp.status}` };
-      const data = await safeJson(resp);
-      const url = data?.files?.[0]?.url;
-      return { url: typeof url === 'string' && url.startsWith('https://') ? url : null, detail: JSON.stringify(data).slice(0, 120) };
-    },
-  },
-  {
-    name: 'catbox',
-    upload: async (formData, blob, fileName) => {
-      formData.append('reqtype', 'fileupload');
-      formData.append('fileToUpload', blob, fileName);
-      const resp = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: formData, signal: AbortSignal.timeout(12000) });
-      const text = (await resp.text()).trim();
-      return { url: text.startsWith('https://') ? text : null, detail: text.slice(0, 120) };
-    },
-  },
-];
-
-async function uploadToHostChain(fileBuffer, fileName, retries = 3) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    const errors = [];
-    for (const host of UPLOAD_HOSTS) {
-      try {
-        const formData = new FormData();
-        const blob = new Blob([fileBuffer], { type: 'application/octet-stream' });
-        const result = await host.upload(formData, blob, fileName);
-        if (result.url) {
-          console.log(`Upload OK via ${host.name} (attempt ${attempt}):`, result.url);
-          return result.url;
-        }
-        errors.push(`${host.name}: ${result.detail}`);
-        console.error(`Upload attempt ${attempt} via ${host.name} failed:`, result.detail);
-      } catch (err) {
-        errors.push(`${host.name}: ${err.message}`);
-        console.error(`Upload attempt ${attempt} via ${host.name} error:`, err.message);
-      }
-    }
-    if (attempt < retries) await new Promise((r) => setTimeout(r, 2000));
-  }
-  console.error('Upload failed. Details:', errors.join(' | '));
-  return null;
+async function uploadToR2(fileBuffer, fileName, contentType) {
+  const key = `uploads/${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  await r2.send(new PutObjectCommand({
+    Bucket: R2_BUCKET,
+    Key: key,
+    Body: fileBuffer,
+    ContentType: contentType || 'application/octet-stream',
+  }));
+  const publicUrl = R2_PUBLIC_URL
+    ? `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`
+    : `https://${R2_BUCKET}.${R2_BUCKET}.r2.dev/${key}`; // fallback pattern
+  console.log('R2 upload OK:', publicUrl);
+  return publicUrl;
 }
 
 app.post('/api/upload', (req, res) => {
@@ -454,7 +434,7 @@ app.post('/api/upload', (req, res) => {
     if (error) return res.status(400).json({ error: error.message || 'File upload failed' });
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
 
-    const fileUrl = await uploadToHostChain(req.file.buffer, req.file.originalname);
+    const fileUrl = await uploadToR2(req.file.buffer, req.file.originalname, req.file.mimetype);
     if (!fileUrl) return res.status(500).json({ error: 'Falha ao enviar arquivo. Tente novamente.' });
 
     return res.status(200).json({
