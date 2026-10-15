@@ -162,8 +162,30 @@ const html = `<div style="font-family:system-ui,-apple-system,sans-serif;padding
 
 // ── DB helpers ───────────────────────────────────────────────────────
 
+// Resolve the numeric data-table id for DATATABLE_NAME (cached).
+let cachedDatatableId = process.env.SHEET_DATATABLE_ID ? Number(process.env.SHEET_DATATABLE_ID) : null;
+
+const getDatatableId = async () => {
+  if (cachedDatatableId) return cachedDatatableId;
+  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/datatables/${SHEET_ORG}`, {
+    headers: { 'Authorization': getBasicAuthHeader() },
+  });
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  const table = Array.isArray(data) ? data.find((t) => t.name === DATATABLE_NAME) : null;
+  cachedDatatableId = table ? table.id : null;
+  return cachedDatatableId;
+};
+
+const recordsUrl = async () => {
+  const id = await getDatatableId();
+  return `${ADMIN_API_BASE}/records/${SHEET_ORG}/${id}`;
+};
+
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+
 const listAllRecords = async () => {
-  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/${SHEET_ORG}/${DATATABLE_NAME}`, {
+  const resp = await fetchWithTimeout(await recordsUrl(), {
     headers: { 'Authorization': getBasicAuthHeader() },
   });
   if (!resp.ok) return [];
@@ -172,29 +194,60 @@ const listAllRecords = async () => {
 };
 
 const findUserByEmail = async (email) => {
+  const norm = normalizeEmail(email);
+  if (!norm) return null;
+  const resp = await fetchWithTimeout(`${await recordsUrl()}?email=${encodeURIComponent(norm)}`, {
+    headers: { 'Authorization': getBasicAuthHeader() },
+  });
+  if (resp.ok) {
+    const data = await resp.json();
+    const arr = Array.isArray(data) ? data : [];
+    const match = arr.find((r) => normalizeEmail(r.email) === norm);
+    if (match) return match;
+  }
   const records = await listAllRecords();
-  const norm = String(email).trim().toLowerCase();
-  return records.find((r) => String(r.email || '').trim().toLowerCase() === norm) || null;
+  return records.find((r) => normalizeEmail(r.email) === norm) || null;
 };
 
 const createUserRecord = async (fields) => {
-  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/${SHEET_ORG}/${DATATABLE_NAME}`, {
+  const resp = await fetchWithTimeout(await recordsUrl(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
     body: JSON.stringify(fields),
   });
+  if (!resp.ok) {
+    console.error('[createUserRecord] failed:', resp.status, await resp.text().catch(() => ''));
+  }
   return resp.ok;
 };
 
 const updateUserRecord = async (recordId, fields) => {
+  if (recordId === undefined || recordId === null) {
+    console.error('[updateUserRecord] missing recordId for', fields && fields.email);
+    return false;
+  }
   const clean = { ...fields };
   delete clean.__id;
-  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/${SHEET_ORG}/${DATATABLE_NAME}/${recordId}`, {
+  const resp = await fetchWithTimeout(`${await recordsUrl()}/${recordId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
     body: JSON.stringify(clean),
   });
-  return resp.ok || resp.status === 204;
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    console.error('[updateUserRecord] PATCH failed:', resp.status, text);
+    return false;
+  }
+  return true;
+};
+
+const deleteUserRecord = async (recordId) => {
+  if (recordId === undefined || recordId === null) return false;
+  const resp = await fetchWithTimeout(`${await recordsUrl()}/${recordId}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': getBasicAuthHeader() },
+  });
+  return resp.ok;
 };
 
 const parseJsonField = (value, fallback) => {
@@ -461,6 +514,8 @@ app.post('/api/add-document', async (req, res) => {
   try {
     const user = await authenticateUser(email, senha);
     if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    console.log('[add-document] User object keys:', Object.keys(user));
+    console.log('[add-document] User __id:', user.__id);
 
     const docs = parseJsonField(user.documentos, []);
     const newDoc = {
@@ -474,7 +529,11 @@ app.post('/api/add-document', async (req, res) => {
       uploadedAt: new Date().toISOString(),
     };
     docs.push(newDoc);
-    await updateUserRecord(user.__id, { ...user, documentos: JSON.stringify(docs) });
+    console.log('[add-document] Before update - docs count:', docs.length);
+    console.log('[add-document] Updating user:', user.__id);
+    const ok = await updateUserRecord(user.__id, { ...user, documentos: JSON.stringify(docs) });
+    console.log('[add-document] Update result:', ok);
+    if (!ok) throw new Error('Falha ao atualizar usuário');
     res.json({ message: 'Documento adicionado', document: newDoc });
   } catch (err) {
     console.error('Add document error:', err);
@@ -776,7 +835,7 @@ const addCreditsToUser = async (targetEmail, amount, description) => {
   transactions.push({ amount: creditAmount, description: description || 'Créditos via pagamento', type: 'credit', createdAt: new Date().toISOString() });
 
   console.log('[addCreditsToUser] updating:', { userId: user.__id, email: targetEmail, current, newBalance, transactionsCount: transactions.length });
-  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_NAME}/${user.__id}`, {
+  const resp = await fetchWithTimeout(`${await recordsUrl()}/${user.__id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
     body: JSON.stringify({ creditos: String(newBalance), transacoes: JSON.stringify(transactions) }),
@@ -793,7 +852,7 @@ const addCreditsToUser = async (targetEmail, amount, description) => {
 const readPendingForUser = (user) => parseJsonField(user.pagamentospendentes, {});
 
 const writePendingForUser = async (user, pending) => {
-  const resp = await fetchWithTimeout(`${ADMIN_API_BASE}/records/${SHEET_ORG}/${DATATABLE_NAME}/${user.__id}`, {
+  const resp = await fetchWithTimeout(`${await recordsUrl()}/${user.__id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
     body: JSON.stringify({ pagamentospendentes: JSON.stringify(pending) }),
