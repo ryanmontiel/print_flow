@@ -9,7 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -92,6 +92,47 @@ const r2 = new S3Client({
 
 const R2_BUCKET = process.env.R2_BUCKET || 'printflow';
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || '';
+
+// ── Limite de armazenamento por aluno (50 MB) ────────────────────────
+const STORAGE_LIMIT_BYTES = 50 * 1024 * 1024;
+
+const isOwnDoc = (doc) => !!doc && !doc.compartilhado_de_email;
+
+const getUsedStorageBytes = (docs) =>
+  (Array.isArray(docs) ? docs : [])
+    .filter(isOwnDoc)
+    .reduce((sum, doc) => sum + (Number(doc.size) || 0), 0);
+
+const r2KeyFromUrl = (url) => {
+  if (!url || typeof url !== 'string') return null;
+  try {
+    const pathname = new URL(url).pathname.replace(/^\//, '');
+    return pathname.startsWith('uploads/') ? pathname : null;
+  } catch {
+    return null;
+  }
+};
+
+const deleteFromR2 = async (url) => {
+  const key = r2KeyFromUrl(url);
+  if (!key) return;
+  try {
+    await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    console.log('R2 delete OK:', key);
+  } catch (err) {
+    console.error('R2 delete failed:', key, err?.message || err);
+  }
+};
+
+const storageLimitReached = (usedBytes, incomingBytes) =>
+  usedBytes + (Number(incomingBytes) || 0) > STORAGE_LIMIT_BYTES;
+
+const storageErrorResponse = (res) =>
+  res.status(413).json({
+    error: 'Limite de armazenamento de 50 MB atingido. Exclua arquivos para enviar novos.',
+    code: 'STORAGE_LIMIT',
+    limitBytes: STORAGE_LIMIT_BYTES,
+  });
 
 // ── Email (Gmail SMTP via Nodemailer) ───────────────────────────────
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
@@ -457,7 +498,11 @@ app.post('/api/documents', async (req, res) => {
     const user = await authenticateUser(email, senha);
     if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
     const docs = parseJsonField(user.documentos, []);
-    res.json({ documents: docs });
+    res.json({
+      documents: docs,
+      usedBytes: getUsedStorageBytes(docs),
+      limitBytes: STORAGE_LIMIT_BYTES,
+    });
   } catch (err) {
     console.error('Get documents error:', err);
     res.status(500).json({ error: 'Falha ao obter documentos' });
@@ -484,6 +529,22 @@ app.post('/api/upload', (req, res) => {
   upload.single('file')(req, res, async (error) => {
     if (error) return res.status(400).json({ error: error.message || 'File upload failed' });
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+
+    // Enforce per-user storage quota before uploading to R2 (avoids orphan files)
+    const { email, senha } = req.body || {};
+    if (email && senha) {
+      try {
+        const user = await authenticateUser(email, senha);
+        if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+        const docs = parseJsonField(user.documentos, []);
+        if (storageLimitReached(getUsedStorageBytes(docs), req.file.size)) {
+          return storageErrorResponse(res);
+        }
+      } catch (err) {
+        console.error('Upload quota check error:', err);
+        return res.status(500).json({ error: 'Falha ao verificar armazenamento' });
+      }
+    }
 
     const fileUrl = await uploadToR2(req.file.buffer, req.file.originalname, req.file.mimetype);
     if (!fileUrl) return res.status(500).json({ error: 'Falha ao enviar arquivo. Tente novamente.' });
@@ -514,8 +575,6 @@ app.post('/api/add-document', async (req, res) => {
   try {
     const user = await authenticateUser(email, senha);
     if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
-    console.log('[add-document] User object keys:', Object.keys(user));
-    console.log('[add-document] User __id:', user.__id);
 
     const docs = parseJsonField(user.documentos, []);
     const newDoc = {
@@ -528,11 +587,15 @@ app.post('/api/add-document', async (req, res) => {
       url: url || '',
       uploadedAt: new Date().toISOString(),
     };
+
+    // Enforce 50 MB per-user storage quota (own documents only)
+    if (storageLimitReached(getUsedStorageBytes(docs), newDoc.size)) {
+      await deleteFromR2(newDoc.url);
+      return storageErrorResponse(res);
+    }
+
     docs.push(newDoc);
-    console.log('[add-document] Before update - docs count:', docs.length);
-    console.log('[add-document] Updating user:', user.__id);
     const ok = await updateUserRecord(user.__id, { ...user, documentos: JSON.stringify(docs) });
-    console.log('[add-document] Update result:', ok);
     if (!ok) throw new Error('Falha ao atualizar usuário');
     res.json({ message: 'Documento adicionado', document: newDoc });
   } catch (err) {
@@ -552,8 +615,9 @@ app.post('/api/delete-document', async (req, res) => {
     let docs = parseJsonField(user.documentos, []);
     const idx = docs.findIndex((d) => d.id === documentId);
     if (idx === -1) return res.status(404).json({ error: 'Documento não encontrado' });
-    docs.splice(idx, 1);
+    const [removed] = docs.splice(idx, 1);
     await updateUserRecord(user.__id, { ...user, documentos: JSON.stringify(docs) });
+    if (isOwnDoc(removed)) await deleteFromR2(removed && removed.url);
     res.json({ message: 'Documento excluído' });
   } catch (err) {
     console.error('Delete document error:', err);

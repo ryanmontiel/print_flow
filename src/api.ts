@@ -158,18 +158,30 @@ export const apiResetPassword = (code: string, senha: string) =>
     body: { code, senha },
   })
 
+export const STORAGE_LIMIT_BYTES = 50 * 1024 * 1024
+
+export const formatBytes = (bytes: number) => {
+  if (!bytes || bytes < 0) return '0 MB'
+  const mb = bytes / (1024 * 1024)
+  if (mb >= 1) return `${mb.toFixed(1)} MB`
+  return `${(bytes / 1024).toFixed(0)} KB`
+}
+
 // Documents
 export const apiGetDocuments = () => {
   const { email, senha } = getCredentials()
-  return request<{ documents: StoredDocument[] }>('/api/documents', {
+  return request<{ documents: StoredDocument[]; usedBytes: number; limitBytes: number }>('/api/documents', {
     method: 'POST',
     body: { email, senha },
   })
 }
 
 export const apiUploadFile = async (file: File) => {
+  const { email, senha } = getCredentials()
   const formData = new FormData()
   formData.append('file', file)
+  formData.append('email', email)
+  formData.append('senha', senha)
   const res = await fetch(`${API}/api/upload`, { method: 'POST', body: formData })
   if (!res.ok) {
     const text = await res.text()

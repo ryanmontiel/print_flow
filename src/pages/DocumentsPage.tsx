@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, Search, Trash2, ExternalLink, Download, Share2, FileText, Loader2 } from 'lucide-react'
-import { apiGetDocuments, apiUploadFile, apiAddDocument, apiDeleteDocument, apiShareDocument, isOwnDocument, documentDisplayName, type StoredDocument } from '../api'
+import { Upload, Search, Trash2, ExternalLink, Download, Share2, FileText, Loader2, HardDrive } from 'lucide-react'
+import { apiGetDocuments, apiUploadFile, apiAddDocument, apiDeleteDocument, apiShareDocument, isOwnDocument, documentDisplayName, formatBytes, STORAGE_LIMIT_BYTES, type StoredDocument } from '../api'
 import ShareModal from '../components/ShareModal'
 import DocumentPreview from '../components/DocumentPreview'
 
@@ -15,7 +15,12 @@ export default function DocumentsPage() {
   const [docName, setDocName] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [shareDoc, setShareDoc] = useState<StoredDocument | null>(null)
+  const [usedBytes, setUsedBytes] = useState(0)
+  const [limitBytes, setLimitBytes] = useState(STORAGE_LIMIT_BYTES)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const ownUsedBytes = (docs: StoredDocument[]) =>
+    docs.filter(isOwnDocument).reduce((sum, d) => sum + (Number(d.size) || 0), 0)
 
   useEffect(() => { loadDocuments() }, [])
 
@@ -23,12 +28,11 @@ const loadDocuments = async () => {
     setLoading(true)
     setError('')
     try {
-      console.log('Loading documents...')
       const res = await apiGetDocuments()
-      console.log('Documents loaded:', res.documents)
       setDocuments(res.documents)
+      setUsedBytes(typeof res.usedBytes === 'number' ? res.usedBytes : ownUsedBytes(res.documents))
+      setLimitBytes(typeof res.limitBytes === 'number' ? res.limitBytes : STORAGE_LIMIT_BYTES)
     } catch (err) {
-      console.error('Load documents error:', err)
       setError(err instanceof Error ? err.message : 'Erro ao carregar documentos')
 } finally {
       setLoading(false)
@@ -38,20 +42,18 @@ const loadDocuments = async () => {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 50 * 1024 * 1024) {
-      setError('Arquivo muito grande. O limite é 50 MB.')
+    if (usedBytes + file.size > limitBytes) {
+      setError(`Limite de armazenamento de ${formatBytes(limitBytes)} atingido. Exclua arquivos para enviar novos.`)
       if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
     setUploading(true)
+    setError('')
     try {
-      console.log('Uploading file:', file.name, file.size)
       const result = await apiUploadFile(file)
-      console.log('Upload result:', result)
       setNamingDoc(result.file)
       setDocName(result.file.originalname.replace(/\.[^/.]+$/, ''))
     } catch (err) {
-      console.error('Upload error:', err)
       setError(err instanceof Error ? err.message : 'Erro no upload')
     } finally {
       setUploading(false)
@@ -62,15 +64,11 @@ const loadDocuments = async () => {
   const handleSaveDocument = async () => {
     if (!namingDoc || !docName.trim()) return
     try {
-      console.log('Saving document:', { docName: docName.trim(), namingDoc })
-      const res = await apiAddDocument(docName.trim(), namingDoc)
-      console.log('Add document response:', res)
+      await apiAddDocument(docName.trim(), namingDoc)
       setNamingDoc(null)
       setDocName('')
       await loadDocuments()
-      console.log('Documents reloaded')
     } catch (err) {
-      console.error('Save document error:', err)
       setError(err instanceof Error ? err.message : 'Erro ao salvar documento')
     }
   }
@@ -79,7 +77,9 @@ const loadDocuments = async () => {
     setDeletingId(id)
     try {
       await apiDeleteDocument(id)
-      setDocuments(prev => prev.filter(d => d.id !== id))
+      const next = documents.filter(d => d.id !== id)
+      setDocuments(next)
+      setUsedBytes(ownUsedBytes(next))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao excluir')
     } finally {
@@ -175,6 +175,30 @@ const loadDocuments = async () => {
         </button>
         <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp" onChange={handleFileSelect} className="hidden" />
       </div>
+
+      {/* Storage usage */}
+      {(() => {
+        const pct = limitBytes > 0 ? Math.min(100, (usedBytes / limitBytes) * 100) : 0
+        const nearLimit = pct >= 90
+        return (
+          <div className="mb-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-200">
+                <HardDrive size={16} /> Armazenamento
+              </span>
+              <span className={`text-sm font-medium ${nearLimit ? 'text-red-500' : 'text-gray-500 dark:text-gray-300'}`}>
+                {formatBytes(usedBytes)} de {formatBytes(limitBytes)}
+              </span>
+            </div>
+            <div className="h-2 w-full bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${nearLimit ? 'bg-red-500' : 'bg-primary-500'}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Name input inline */}
       <AnimatePresence>
