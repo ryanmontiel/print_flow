@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, Search, Trash2, ExternalLink, Download, Share2, FileText, Loader2, HardDrive } from 'lucide-react'
-import { apiGetDocuments, apiUploadFile, apiAddDocument, apiDeleteDocument, apiShareDocument, isOwnDocument, documentDisplayName, formatBytes, STORAGE_LIMIT_BYTES, type StoredDocument } from '../api'
+import { apiGetDocuments, apiUploadFile, apiAddDocument, apiDeleteDocument, apiShareDocument, isOwnDocument, documentDisplayName, formatBytes, STORAGE_LIMIT_BYTES, PER_FILE_LIMIT_BYTES, type StoredDocument } from '../api'
 import ShareModal from '../components/ShareModal'
 import DocumentPreview from '../components/DocumentPreview'
 
@@ -42,6 +42,11 @@ const loadDocuments = async () => {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    if (file.size > PER_FILE_LIMIT_BYTES) {
+      setError(`Arquivo muito grande. O limite é ${formatBytes(PER_FILE_LIMIT_BYTES)} por arquivo.`)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
     if (usedBytes + file.size > limitBytes) {
       setError(`Limite de armazenamento de ${formatBytes(limitBytes)} atingido. Exclua arquivos para enviar novos.`)
       if (fileInputRef.current) fileInputRef.current.value = ''

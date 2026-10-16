@@ -10,6 +10,7 @@ import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,7 +48,7 @@ const allowedMimes = [
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 4 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/') || allowedMimes.includes(file.mimetype)) return cb(null, true);
     cb(new Error('Tipo de arquivo inválido.'));
@@ -95,6 +96,15 @@ const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || '';
 
 // ── Limite de armazenamento por aluno (50 MB) ────────────────────────
 const STORAGE_LIMIT_BYTES = 50 * 1024 * 1024;
+const PER_FILE_LIMIT_BYTES = 10 * 1024 * 1024;
+
+const buildR2Key = (fileName) =>
+  `uploads/${Date.now()}-${String(fileName || 'file').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+
+const publicUrlForKey = (key) =>
+  R2_PUBLIC_URL
+    ? `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`
+    : `https://${R2_BUCKET}.${R2_BUCKET}.r2.dev/${key}`;
 
 const isOwnDoc = (doc) => !!doc && !doc.compartilhado_de_email;
 
@@ -509,25 +519,68 @@ app.post('/api/documents', async (req, res) => {
   }
 });
 
-// ── Upload (external host chain) ──────────────────────────────────────
+// ── Upload helpers ───────────────────────────────────────────────────
 async function uploadToR2(fileBuffer, fileName, contentType) {
-  const key = `uploads/${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  const key = buildR2Key(fileName);
   await r2.send(new PutObjectCommand({
     Bucket: R2_BUCKET,
     Key: key,
     Body: fileBuffer,
     ContentType: contentType || 'application/octet-stream',
   }));
-  const publicUrl = R2_PUBLIC_URL
-    ? `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`
-    : `https://${R2_BUCKET}.${R2_BUCKET}.r2.dev/${key}`; // fallback pattern
+  const publicUrl = publicUrlForKey(key);
   console.log('R2 upload OK:', publicUrl);
   return publicUrl;
 }
 
+// ── Presigned upload (arquivos grandes direto para o R2, sem passar pela Vercel) ──
+app.post('/api/upload/presign', async (req, res) => {
+  const { email, senha, filename, contentType, size } = req.body;
+  if (!email || !senha) return res.status(400).json({ error: 'Credenciais ausentes' });
+  const fileSize = Number(size) || 0;
+  if (!filename) return res.status(400).json({ error: 'Nome do arquivo ausente' });
+  if (fileSize > PER_FILE_LIMIT_BYTES) {
+    return res.status(413).json({
+      error: `Arquivo muito grande. O limite é ${PER_FILE_LIMIT_BYTES / (1024 * 1024)} MB por arquivo.`,
+      code: 'FILE_TOO_LARGE',
+      limitBytes: PER_FILE_LIMIT_BYTES,
+    });
+  }
+  try {
+    const user = await authenticateUser(email, senha);
+    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const docs = parseJsonField(user.documentos, []);
+    if (storageLimitReached(getUsedStorageBytes(docs), fileSize)) return storageErrorResponse(res);
+
+    const key = buildR2Key(filename);
+    const uploadUrl = await getSignedUrl(
+      r2,
+      new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: contentType || 'application/octet-stream' }),
+      { expiresIn: 600 },
+    );
+    return res.json({
+      message: 'URL de upload gerada',
+      uploadUrl,
+      url: publicUrlForKey(key),
+      key,
+      expiresIn: 600,
+      limitBytes: PER_FILE_LIMIT_BYTES,
+    });
+  } catch (err) {
+    console.error('Presign error:', err);
+    return res.status(500).json({ error: 'Falha ao preparar upload' });
+  }
+});
+
 app.post('/api/upload', (req, res) => {
   upload.single('file')(req, res, async (error) => {
-    if (error) return res.status(400).json({ error: error.message || 'File upload failed' });
+    if (error) {
+      const code = error.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : undefined;
+      const msg = error.code === 'LIMIT_FILE_SIZE'
+        ? `Arquivo muito grande. O limite é ${PER_FILE_LIMIT_BYTES / (1024 * 1024)} MB por arquivo.`
+        : (error.message || 'File upload failed');
+      return res.status(code ? 413 : 400).json({ error: msg, code, limitBytes: PER_FILE_LIMIT_BYTES });
+    }
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
 
     // Enforce per-user storage quota before uploading to R2 (avoids orphan files)
@@ -567,7 +620,6 @@ app.get('/uploads/:file', (req, res) => {
   return res.status(404).json({ error: 'Arquivo não encontrado' });
 });
 
-// ── Vercel Blob (client-side uploads, sem limite de 4.5MB) ────────────
 // ── Add document ─────────────────────────────────────────────────────
 app.post('/api/add-document', async (req, res) => {
   const { email, senha, documentName, filename, originalname, mimetype, size, url } = req.body;

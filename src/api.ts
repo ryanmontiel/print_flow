@@ -159,6 +159,7 @@ export const apiResetPassword = (code: string, senha: string) =>
   })
 
 export const STORAGE_LIMIT_BYTES = 50 * 1024 * 1024
+export const PER_FILE_LIMIT_BYTES = 10 * 1024 * 1024
 
 export const formatBytes = (bytes: number) => {
   if (!bytes || bytes < 0) return '0 MB'
@@ -176,26 +177,45 @@ export const apiGetDocuments = () => {
   })
 }
 
+// Envia o arquivo direto para o R2 via URL pré-assinada (contorna o limite de 4.5MB da Vercel)
 export const apiUploadFile = async (file: File) => {
   const { email, senha } = getCredentials()
-  const formData = new FormData()
-  formData.append('file', file)
-  formData.append('email', email)
-  formData.append('senha', senha)
-  const res = await fetch(`${API}/api/upload`, { method: 'POST', body: formData })
-  if (!res.ok) {
-    const text = await res.text()
-    let message = 'Erro ao enviar arquivo. Tente novamente.'
-    try {
-      const data = JSON.parse(text)
-      if (data?.error) message = data.error
-    } catch {
-      if (/too large|TOO_LARGE|limit/i.test(text)) message = 'Arquivo muito grande. O limite é 4 MB.'
-      else if (/An error occurred|FUNCTION/i.test(text)) message = 'Servidor demorou demais. Tente novamente.'
-    }
-    throw new Error(message)
+
+  if (file.size > PER_FILE_LIMIT_BYTES) {
+    throw new Error(`Arquivo muito grande. O limite é ${PER_FILE_LIMIT_BYTES / (1024 * 1024)} MB por arquivo.`)
   }
-  return res.json() as Promise<{ message: string; file: StoredDocument }>
+
+  const presign = await request<{ uploadUrl: string; url: string; key: string }>('/api/upload/presign', {
+    method: 'POST',
+    body: {
+      email,
+      senha,
+      filename: file.name,
+      contentType: file.type || 'application/octet-stream',
+      size: file.size,
+    },
+  })
+
+  const put = await fetch(presign.uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  })
+  if (!put.ok) {
+    throw new Error('Falha ao enviar o arquivo. Tente novamente.')
+  }
+
+  const uploaded: StoredDocument = {
+    id: '',
+    name: '',
+    filename: presign.url,
+    originalname: file.name,
+    mimetype: file.type || 'application/octet-stream',
+    size: file.size,
+    url: presign.url,
+    uploadedAt: new Date().toISOString(),
+  }
+  return { message: 'File uploaded successfully', file: uploaded }
 }
 
 export const apiAddDocument = (documentName: string, uploadedFile: StoredDocument) => {
