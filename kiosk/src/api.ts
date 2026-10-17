@@ -60,6 +60,16 @@ export type StoredDocument = {
   mensagem_compartilhamento?: string
 }
 
+export const TITLE_MAX_LENGTH = 60
+
+export const truncateTitle = (text?: string, max = TITLE_MAX_LENGTH) => {
+  const value = String(text ?? '')
+  return value.length > max ? `${value.slice(0, max).trimEnd()}...` : value
+}
+
+export const documentDisplayName = (doc?: Partial<StoredDocument> | null) =>
+  doc?.name || doc?.originalname || 'Documento'
+
 export type PrintConfig = {
   color: 'bw' | 'color'
   duplex: 'single' | 'duplex'
@@ -67,12 +77,16 @@ export type PrintConfig = {
 
 export const PRINT_PRICES: Record<`${PrintConfig['color']}_${PrintConfig['duplex']}`, number> = {
   bw_single: 0.5,
-  bw_duplex: 1.0,
+  bw_duplex: 0.35,
   color_single: 0.75,
-  color_duplex: 1.5,
+  color_duplex: 0.6,
 }
 
 export const getPrintPrice = (config: PrintConfig) => PRINT_PRICES[`${config.color}_${config.duplex}`]
+
+// Preço é sempre por página do documento; frente e verso tem desconto (menos folhas).
+export const getPrintCost = (config: PrintConfig, pages: number) =>
+  Math.round(pages * getPrintPrice(config) * 100) / 100
 
 export const printConfigLabel = (c?: { color?: string; duplex?: string }) => {
   const color = c?.color === 'color' ? 'Colorido' : 'Preto e branco'

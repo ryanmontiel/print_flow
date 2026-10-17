@@ -92,7 +92,7 @@ const r2 = new S3Client({
 });
 
 const R2_BUCKET = process.env.R2_BUCKET || 'printflow';
-const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || '';
+const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://pub-594eef513fd44bdc8069da8e0017a777.r2.dev';
 
 // ── Limite de armazenamento por aluno (50 MB) ────────────────────────
 const STORAGE_LIMIT_BYTES = 50 * 1024 * 1024;
@@ -101,12 +101,29 @@ const PER_FILE_LIMIT_BYTES = 10 * 1024 * 1024;
 const buildR2Key = (fileName) =>
   `uploads/${Date.now()}-${String(fileName || 'file').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
-const publicUrlForKey = (key) =>
-  R2_PUBLIC_URL
-    ? `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`
-    : `https://${R2_BUCKET}.${R2_BUCKET}.r2.dev/${key}`;
+const publicUrlForKey = (key) => `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`;
 
 const isOwnDoc = (doc) => !!doc && !doc.compartilhado_de_email;
+
+// Alguns deploys (ex.: Render) não tinham R2_PUBLIC_URL e salvavam documentos
+// em um host inexistente (printflow.printflow.r2.dev). Reescreve qualquer
+// *.r2.dev inválido para o host público correto para que o preview volte a funcionar.
+const R2_PUBLIC_ORIGIN = (() => {
+  try { return new URL(R2_PUBLIC_URL).origin; } catch { return ''; }
+})();
+
+const normalizeDocUrl = (doc) => {
+  if (!doc || typeof doc.url !== 'string' || !doc.url || !R2_PUBLIC_ORIGIN) return doc;
+  try {
+    const u = new URL(doc.url);
+    if (u.hostname.endsWith('.r2.dev') && u.origin !== R2_PUBLIC_ORIGIN) {
+      return { ...doc, url: `${R2_PUBLIC_ORIGIN}${u.pathname}`, filename: `${R2_PUBLIC_ORIGIN}${u.pathname}` };
+    }
+  } catch {}
+  return doc;
+};
+
+const normalizeDocUrls = (docs) => (Array.isArray(docs) ? docs : []).map(normalizeDocUrl);
 
 const getUsedStorageBytes = (docs) =>
   (Array.isArray(docs) ? docs : [])
@@ -348,14 +365,20 @@ const isValidPassword = (senha) => PASSWORD_STRENGTH_RE.test(String(senha || '')
 
 // ── Print pricing (BRL per page) ──────────────────────────────────────
 const PRINT_PRICES = {
-  bw: { single: 0.5, duplex: 1.0 },
-  color: { single: 0.75, duplex: 1.5 },
+  bw: { single: 0.5, duplex: 0.35 },
+  color: { single: 0.75, duplex: 0.6 },
 };
 const getUnitPrice = (color, duplex) => {
   const p = PRINT_PRICES[color] || PRINT_PRICES.bw;
   return p && p[duplex] != null ? p[duplex] : PRINT_PRICES.bw.single;
 };
 const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+// "single" = preço por página; "duplex" = preço por folha (2 páginas por folha).
+const getPrintCost = (color, duplex, pages) => {
+  const price = getUnitPrice(color, duplex);
+  const n = Number(pages) || 1;
+  return round2(n * price);
+};
 
 // ═══════════════════════════════════════════════════════════════════════
 // ROUTES
@@ -507,7 +530,7 @@ app.post('/api/documents', async (req, res) => {
   try {
     const user = await authenticateUser(email, senha);
     if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
-    const docs = parseJsonField(user.documentos, []);
+    const docs = normalizeDocUrls(parseJsonField(user.documentos, []));
     res.json({
       documents: docs,
       usedBytes: getUsedStorageBytes(docs),
@@ -763,7 +786,10 @@ app.post('/api/print', async (req, res) => {
     const prefs = parsePrinterPreferences(user.printerpreferences);
     const printColor = color === 'color' ? 'color' : (color === 'bw' ? 'bw' : prefs.color);
     const printDuplex = duplex === 'duplex' ? 'duplex' : (duplex === 'single' ? 'single' : prefs.duplex);
-    const printCost = round2(Number(cost) > 0 ? cost : getUnitPrice(printColor, printDuplex) * (Number(pages) || 1));
+    if (printDuplex === 'duplex' && (Number(pages) || 1) < 2) {
+      return res.status(400).json({ error: 'Frente e verso requer pelo menos 2 páginas' });
+    }
+    const printCost = round2(Number(cost) > 0 ? cost : getPrintCost(printColor, printDuplex, pages));
     if (!(printCost > 0)) return res.status(400).json({ error: 'Valor de impressão inválido' });
 
     const current = Number(user.creditos || 0);

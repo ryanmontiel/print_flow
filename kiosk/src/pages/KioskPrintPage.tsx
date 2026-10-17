@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import PdfPreview from '../components/PdfPreview'
 import ImagePreview from '../components/ImagePreview'
-import { apiGetDocuments, apiGetCredits, apiPrintStart, apiPrintStatus, apiPrintComplete, apiGetPrintPreferences, getPrintPrice, printConfigLabel, formatBRL, type StoredDocument, type PrintConfig } from '../api'
+import { apiGetDocuments, apiGetCredits, apiPrintStart, apiPrintStatus, apiPrintComplete, apiGetPrintPreferences, getPrintPrice, getPrintCost, printConfigLabel, formatBRL, documentDisplayName, truncateTitle, type StoredDocument, type PrintConfig } from '../api'
 
 type Step = 'select' | 'simulate' | 'printing' | 'done' | 'error'
 
@@ -42,7 +42,8 @@ export default function KioskPrintPage() {
   const selectedPageCount = isPdf ? pdfSelectedPages.size : manualPages
   const totalPrintedPages = selectedPageCount * copies
   const price = getPrintPrice(config)
-  const totalCost = totalPrintedPages * price
+  const totalCost = getPrintCost(config, totalPrintedPages)
+  const canDuplex = selectedPageCount >= 2
   const canPrint = credits >= totalCost && totalPrintedPages > 0
 
   const userName = localStorage.getItem('pf-kiosk-name') || ''
@@ -64,6 +65,12 @@ export default function KioskPrintPage() {
       }
     }
   }, [docId, docs])
+
+  useEffect(() => {
+    if (!canDuplex && config.duplex === 'duplex') {
+      setConfigPersist(c => ({ ...c, duplex: 'single' }))
+    }
+  }, [canDuplex, config.duplex])
 
   const loadData = async () => {
     setLoading(true)
@@ -219,7 +226,7 @@ export default function KioskPrintPage() {
           <span className="text-sm text-gray-500">
             Saldo: <strong className="text-primary-600">{formatBRL(credits)}</strong>
           </span>
-          <span className="text-sm text-gray-400 hidden sm:inline">{userName}</span>
+          <span className="text-sm text-gray-400 hidden sm:inline max-w-[160px] truncate">{truncateTitle(userName, 24)}</span>
           <button
             onClick={handleLogout}
             className="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-gray-100"
@@ -275,7 +282,7 @@ export default function KioskPrintPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
-                        {doc.name || doc.originalname || 'Documento'}
+                        {truncateTitle(documentDisplayName(doc))}
                       </p>
                       <p className="text-xs text-gray-400 truncate">
                         {doc.compartilhado_de_nome ? `Compartilhado por ${doc.compartilhado_de_nome}` : 'Documento próprio'}
@@ -308,9 +315,9 @@ export default function KioskPrintPage() {
                   {getFileIcon(selected.mimetype)}
                 </div>
                 <div className="min-w-0">
-                  <h2 className="font-heading text-xl font-bold text-gray-900 truncate">
-                    {selected.name || selected.originalname || 'Documento'}
-                  </h2>
+                      <h2 className="font-heading text-xl font-bold text-gray-900 truncate">
+                        {truncateTitle(documentDisplayName(selected))}
+                      </h2>
                   <p className="text-sm text-gray-400 truncate">
                     {selected.compartilhado_de_nome ? `Compartilhado por ${selected.compartilhado_de_nome}` : 'Documento próprio'}
                   </p>
@@ -342,7 +349,7 @@ export default function KioskPrintPage() {
                     <div className="flex flex-col items-center justify-center bg-gray-100 rounded-xl p-8 text-gray-400">
                       {getFileIcon(selected.mimetype)}
                       <p className="mt-2 text-sm">Pré-visualização não disponível para este formato</p>
-                      <p className="text-xs mt-1">{selected.originalname || selected.name}</p>
+                      <p className="text-xs mt-1 max-w-full truncate">{truncateTitle(documentDisplayName(selected))}</p>
                     </div>
                   )
                 })()}
@@ -374,8 +381,13 @@ export default function KioskPrintPage() {
                       className="w-full px-3 py-3 border border-gray-300 rounded-xl text-base font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
                     >
                       <option value="single">Simples</option>
-                      <option value="duplex">Frente e verso</option>
+                      <option value="duplex" disabled={!canDuplex}>Frente e verso</option>
                     </select>
+                    {!canDuplex && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        Frente e verso indisponível: requer pelo menos 2 páginas.
+                      </p>
+                    )}
                   </div>
                 </div>
 
