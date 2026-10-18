@@ -18,6 +18,9 @@ dist-ssr
 # Uploaded files
 uploads/
 
+# Kiosk local cache
+kiosk/cache/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -17,7 +17,7 @@ const MAIN_SERVER = process.env.MAIN_SERVER || 'https://tcc-printflow.vercel.app
 const BIND_ADDRESS = process.env.KIOSK_BIND || '127.0.0.1';
 const CUPS_PRINTER = process.env.CUPS_PRINTER || 'printflow';
 const CUPS_IPP_URL = process.env.CUPS_IPP_URL || '';
-const CACHE_DIR = path.join(__dirname, 'cache');
+const CACHE_DIR = process.env.KIOSK_CACHE_DIR || path.join(__dirname, 'cache');
 
 // In-memory job tracking (in production, use Redis or similar)
 const printJobs = new Map();
