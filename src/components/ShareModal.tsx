@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Send, User } from 'lucide-react'
-import { apiGetUsers } from '../api'
+import { apiGetUsers, truncateTitle } from '../api'
 
 type Props = {
   isOpen: boolean
@@ -93,9 +93,9 @@ export default function ShareModal({ isOpen, onClose, documentName, onShare }: P
               <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
                 <Send size={20} className="text-primary-600 dark:text-primary-400" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h2 className="font-heading text-xl font-bold">Compartilhar Documento</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-200 truncate">{documentName}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-200 truncate">{truncateTitle(documentName)}</p>
               </div>
             </div>
 

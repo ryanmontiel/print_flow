@@ -101,7 +101,7 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
       <div className="flex flex-col items-center justify-center bg-gray-100 rounded-xl p-8 text-gray-400 min-h-[200px]">
         <AlertCircle size={32} className="mb-2" />
         <p className="text-sm">Erro ao carregar PDF</p>
-        <p className="text-xs text-gray-300 mt-1 max-w-xs text-center truncate">{error}</p>
+        <p className="text-xs text-gray-500 mt-1 max-w-sm text-center break-words">{error}</p>
         <button
           onClick={() => loadPdf()}
           className="mt-3 flex items-center gap-1 text-xs px-3 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors"

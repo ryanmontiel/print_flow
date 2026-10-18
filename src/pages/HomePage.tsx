@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { FileText, CreditCard, Printer, ArrowRight, TrendingUp, TrendingDown, Send, X } from 'lucide-react'
-import { apiGetDocuments, apiGetCredits, apiGetPrintHistory, apiGetUsers, apiShareDocument, isOwnDocument, documentDisplayName, formatBRL, type StoredDocument, type Transaction } from '../api'
+import { apiGetDocuments, apiGetCredits, apiGetPrintHistory, apiGetUsers, apiShareDocument, isOwnDocument, documentDisplayName, truncateTitle, formatBRL, type StoredDocument, type Transaction } from '../api'
 
 export default function HomePage() {
   const navigate = useNavigate()
@@ -301,7 +301,7 @@ export default function HomePage() {
                   >
                     <option value="">Selecione um documento</option>
                     {shareDocs.map(d => (
-                      <option key={d.id} value={d.id}>{documentDisplayName(d)}</option>
+                      <option key={d.id} value={d.id}>{truncateTitle(documentDisplayName(d))}</option>
                     ))}
                   </select>
                 </div>

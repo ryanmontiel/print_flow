@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, Search, Trash2, ExternalLink, Download, Share2, FileText, Loader2, HardDrive } from 'lucide-react'
-import { apiGetDocuments, apiUploadFile, apiAddDocument, apiDeleteDocument, apiShareDocument, isOwnDocument, documentDisplayName, formatBytes, STORAGE_LIMIT_BYTES, PER_FILE_LIMIT_BYTES, type StoredDocument } from '../api'
+import { apiGetDocuments, apiUploadFile, apiAddDocument, apiDeleteDocument, apiShareDocument, isOwnDocument, documentDisplayName, truncateTitle, formatBytes, STORAGE_LIMIT_BYTES, PER_FILE_LIMIT_BYTES, type StoredDocument } from '../api'
 import ShareModal from '../components/ShareModal'
 import DocumentPreview from '../components/DocumentPreview'
 
@@ -113,12 +113,12 @@ const loadDocuments = async () => {
         exit={{ opacity: 0, y: -10, height: 0 }}
         className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 flex items-center gap-4"
       >
-        <DocumentPreview url={fileUrl} mimetype={doc.mimetype} name={documentDisplayName(doc)} />
+        <DocumentPreview url={fileUrl} mimetype={doc.mimetype} name={truncateTitle(documentDisplayName(doc))} />
 
         <div className="flex-1 min-w-0">
-          <p className="font-medium truncate">{documentDisplayName(doc)}</p>
-          <p className="text-xs text-gray-400">
-            {doc.originalname ?? 'desconhecido'} &middot; {((doc.size ?? 0) / 1024).toFixed(1)} KB
+          <p className="font-medium truncate">{truncateTitle(documentDisplayName(doc))}</p>
+          <p className="text-xs text-gray-400 truncate">
+            {truncateTitle(doc.originalname ?? 'desconhecido')} &middot; {((doc.size ?? 0) / 1024).toFixed(1)} KB
           </p>
           {isShared && doc.compartilhado_de_email && (
             <p className="text-xs text-primary-600 dark:text-primary-400 mt-0.5 flex items-center gap-1">

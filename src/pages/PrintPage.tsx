@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Printer, FileText, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react'
-import { apiGetDocuments, apiGetCredits, apiPrint, isOwnDocument, documentDisplayName, getPrintPrice, printConfigLabel, formatBRL, type StoredDocument, type PrintConfig } from '../api'
+import { apiGetDocuments, apiGetCredits, apiPrint, isOwnDocument, documentDisplayName, truncateTitle, getPrintPrice, printConfigLabel, formatBRL, type StoredDocument, type PrintConfig } from '../api'
 import { useNavigate } from 'react-router-dom'
 
 export default function PrintPage() {
@@ -119,7 +119,7 @@ export default function PrintPage() {
               >
                 <option value="">-- Selecione --</option>
                 {ownDocuments.map(d => (
-                  <option key={d.id} value={d.id}>{documentDisplayName(d)}</option>
+                  <option key={d.id} value={d.id}>{truncateTitle(documentDisplayName(d))}</option>
                 ))}
               </select>
             )}
@@ -172,9 +172,9 @@ export default function PrintPage() {
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5">
             <h3 className="font-heading text-lg font-bold mb-4">Resumo</h3>
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-200">Documento</span>
-                <span className="font-medium">{selectedDoc ? documentDisplayName(selectedDoc) : '—'}</span>
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-500 dark:text-gray-200 shrink-0">Documento</span>
+                <span className="font-medium min-w-0 truncate text-right">{selectedDoc ? truncateTitle(documentDisplayName(selectedDoc)) : '—'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-200">Configuração</span>

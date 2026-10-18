@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Printer, CheckCircle, XCircle, FileText } from 'lucide-react'
-import { apiGetPrintHistory, formatBRL, printConfigLabel, type PrintRecord } from '../api'
+import { apiGetPrintHistory, truncateTitle, formatBRL, printConfigLabel, type PrintRecord } from '../api'
 
 export default function PrintHistoryPage() {
   const [history, setHistory] = useState<PrintRecord[]>([])
@@ -66,7 +66,7 @@ export default function PrintHistoryPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <FileText size={14} className="text-gray-400 shrink-0" />
-                  <p className="font-medium truncate">{record.documentName}</p>
+                  <p className="font-medium truncate">{truncateTitle(record.documentName)}</p>
                 </div>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {new Date(record.printedAt).toLocaleString('pt-BR')} · {printConfigLabel(record)}

@@ -67,6 +67,13 @@ export const isOwnDocument = (doc: StoredDocument) =>
 export const documentDisplayName = (doc: StoredDocument) =>
   doc.name || doc.originalname || 'Documento sem nome'
 
+export const TITLE_MAX_LENGTH = 60
+
+export const truncateTitle = (text?: string, max = TITLE_MAX_LENGTH) => {
+  const value = String(text ?? '')
+  return value.length > max ? `${value.slice(0, max).trimEnd()}...` : value
+}
+
 export type Notification = {
   id: string
   tipo: 'share_request' | 'share_accepted' | 'share_rejected' | 'print_complete' | 'credits_added'
