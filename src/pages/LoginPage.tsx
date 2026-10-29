@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { apiLogin, apiRegister, apiVerifyEmail, apiResendCode, apiForgotPassword, apiGetPrintPreferences } from '../api'
+import { apiLogin, apiRegister, apiVerifyEmail, apiResendCode, apiForgotPassword, setToken } from '../api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Printer, FileText, MailCheck, Check, Lock } from 'lucide-react'
 
@@ -159,16 +159,19 @@ export default function LoginPage() {
           setLoading(false)
           return
         }
-        await apiRegister(email, nome, senha)
+        const reg = await apiRegister(email, nome, senha)
         setPendingEmail(email)
         setStep('verify')
-        startResendCooldown()
-        showNotice('Conta criada! Verifique seu email para o código de verificação.', 'success')
+        if (reg.emailSent === false) {
+          showNotice('Conta criada, mas não conseguimos enviar o email. Toque em "Reenviar código".', 'error')
+        } else {
+          startResendCooldown()
+          showNotice('Conta criada! Verifique seu email para o código de verificação.', 'success')
+        }
       } else {
-        const result = await apiLogin(email, senha)
-        const storage = remember ? localStorage : sessionStorage
-        storage.setItem('userCredentials', JSON.stringify({ email, senha }))
-        login(email, result.displayName, remember, result.printColor as 'color' | 'bw', result.printDuplex as 'single' | 'duplex')
+        const result = await apiLogin(email, senha, remember)
+        setToken(result.token, remember)
+        login(result.email, result.displayName, remember, result.printColor as 'color' | 'bw', result.printDuplex as 'single' | 'duplex')
         setTimeout(() => navigate('/home'), 500)
       }
     } catch (err) {
@@ -188,16 +191,10 @@ export default function LoginPage() {
     try {
       await apiVerifyEmail(pendingEmail, verifyCode.trim())
       showNotice('Email verificado com sucesso!', 'success')
-      const storage = remember ? localStorage : sessionStorage
-      storage.setItem('userCredentials', JSON.stringify({ email: pendingEmail, senha: senhaValue }))
-      // Fetch preferences after verification
-      let printColor = 'bw', printDuplex = 'single'
-      try {
-        const prefs = await apiGetPrintPreferences()
-        printColor = prefs.printColor
-        printDuplex = prefs.printDuplex
-      } catch {}
-      login(pendingEmail, pendingEmail, remember, printColor as 'color' | 'bw', printDuplex as 'single' | 'duplex')
+      // Já verificado: entra direto com a senha digitada no cadastro
+      const result = await apiLogin(pendingEmail, senhaValue, remember)
+      setToken(result.token, remember)
+      login(result.email, result.displayName, remember, result.printColor as 'color' | 'bw', result.printDuplex as 'single' | 'duplex')
       setTimeout(() => navigate('/home'), 500)
     } catch (err) {
       showNotice(err instanceof Error ? err.message : 'Código inválido', 'error')
@@ -217,15 +214,9 @@ export default function LoginPage() {
       await apiForgotPassword(forgotEmail.trim().toLowerCase())
       setForgotSent(true)
       setForgotError(null)
-      showNotice('Link de recuperação enviado para seu email.', 'success')
+      showNotice('Se o email estiver cadastrado, você receberá o link de recuperação.', 'success')
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Falha ao solicitar recuperação'
-      if (/cadastrado/i.test(msg)) {
-        setForgotSent(true)
-        setForgotError('Email não cadastrado.')
-      } else {
-        showNotice(msg, 'error')
-      }
+      showNotice(err instanceof Error ? err.message : 'Falha ao solicitar recuperação', 'error')
     } finally {
       setForgotLoading(false)
     }

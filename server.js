@@ -3,13 +3,11 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import multer from 'multer';
 import nodemailer from 'nodemailer';
 import path from 'path';
 import fs from 'fs';
-import os from 'os';
 import { fileURLToPath } from 'url';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -34,7 +32,7 @@ app.use((error, _req, res, next) => {
   return next(error);
 });
 
-// ── Multer (memory → Catbox) ─────────────────────────────────────────
+// ── Tipos de arquivo aceitos no upload ───────────────────────────────
 const allowedMimes = [
   'application/pdf',
   'application/msword',
@@ -45,15 +43,7 @@ const allowedMimes = [
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'text/plain', 'text/csv', 'application/rtf', 'application/vnd.oasis.opendocument.text',
 ];
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith('image/') || allowedMimes.includes(file.mimetype)) return cb(null, true);
-    cb(new Error('Tipo de arquivo inválido.'));
-  },
-});
+const isAllowedMime = (mime) => typeof mime === 'string' && (mime.startsWith('image/') || allowedMimes.includes(mime));
 
 // ── Sheetlabs Admin API ──────────────────────────────────────────────
 const ADMIN_API_BASE = 'https://sheetlabs.com';
@@ -82,12 +72,17 @@ const safeJson = async (r) => {
 };
 
 // ── Cloudflare R2 (S3-compatível) ─────────────────────────────────────
+// Credenciais só via variáveis de ambiente (.env local / painel da Vercel)
+for (const name of ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']) {
+  if (!process.env[name]) console.error(`[config] ${name} não definida: uploads para o R2 vão falhar`);
+}
+
 const r2 = new S3Client({
   region: 'auto',
-  endpoint: process.env.R2_ENDPOINT || 'https://8b212dd9226f263510ae6a57c1bed66e.r2.cloudflarestorage.com',
+  endpoint: process.env.R2_ENDPOINT,
   credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID || 'edfaaf40cb5268f69c7841203ff43e83',
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '1bfe8926b41d72cf5ebdb2b11d96ab467b5849df9eaab609d934a90f8405faf2',
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
   },
 });
 
@@ -98,8 +93,31 @@ const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://pub-594eef513fd44bdc
 const STORAGE_LIMIT_BYTES = 50 * 1024 * 1024;
 const PER_FILE_LIMIT_BYTES = 10 * 1024 * 1024;
 
-const buildR2Key = (fileName) =>
-  `uploads/${Date.now()}-${String(fileName || 'file').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+// Segredo do servidor para assinar chaves de upload (e, depois, sessões).
+const APP_SECRET = process.env.APP_SECRET || process.env.R2_SECRET_ACCESS_KEY || '';
+if (!process.env.APP_SECRET) console.warn('[config] APP_SECRET não definida: usando R2_SECRET_ACCESS_KEY como segredo');
+
+const hmac = (data) => crypto.createHmac('sha256', APP_SECRET).update(data).digest('hex');
+const UPLOAD_KEY_MAX_AGE_MS = 60 * 60 * 1000;
+
+// uploads/<timestamp>-<tag>-<nome>, onde tag = HMAC(email, timestamp, nome).
+// Só quem pediu o upload consegue registrar a chave como documento, e a URL não é adivinhável.
+const uploadTag = (email, ts, safeName) => hmac(`upload|${normalizeEmail(email)}|${ts}|${safeName}`).slice(0, 20);
+
+const buildR2Key = (email, fileName) => {
+  const ts = Date.now();
+  const safeName = String(fileName || 'file').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120);
+  return `uploads/${ts}-${uploadTag(email, ts, safeName)}-${safeName}`;
+};
+
+const verifyUploadKey = (email, key) => {
+  const m = /^uploads\/(\d+)-([0-9a-f]{20})-([a-zA-Z0-9._-]+)$/.exec(String(key || ''));
+  if (!m) return false;
+  const [, ts, tag, safeName] = m;
+  if (Date.now() - Number(ts) > UPLOAD_KEY_MAX_AGE_MS) return false;
+  const expected = uploadTag(email, ts, safeName);
+  return crypto.timingSafeEqual(Buffer.from(tag), Buffer.from(expected));
+};
 
 const publicUrlForKey = (key) => `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`;
 
@@ -133,7 +151,10 @@ const getUsedStorageBytes = (docs) =>
 const r2KeyFromUrl = (url) => {
   if (!url || typeof url !== 'string') return null;
   try {
-    const pathname = new URL(url).pathname.replace(/^\//, '');
+    const u = new URL(url);
+    // Só URLs do nosso bucket (antes qualquer domínio com /uploads/... servia)
+    if (!u.hostname.endsWith('.r2.dev')) return null;
+    const pathname = u.pathname.replace(/^\//, '');
     return pathname.startsWith('uploads/') ? pathname : null;
   } catch {
     return null;
@@ -192,9 +213,13 @@ const html = `<div style="font-family:system-ui,-apple-system,sans-serif;padding
     } catch (err) {
       console.error('SMTP error:', err.message);
       console.error('Nodemailer config:', JSON.stringify({ host: SMTP_HOST, port: SMTP_PORT, user: SMTP_USER, passSet: Boolean(SMTP_PASS) }));
-      printCodeToConsole(email, code);
-      return true;
+      return false;
     }
+  }
+  // Sem SMTP configurado: só em desenvolvimento local o código vai para o console
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+    console.error('[email] SMTP não configurado: código de verificação não enviado');
+    return false;
   }
   printCodeToConsole(email, code);
   return true;
@@ -223,6 +248,10 @@ const html = `<div style="font-family:system-ui,-apple-system,sans-serif;padding
       console.error('SMTP reset error:', err.message);
       return false;
     }
+  }
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+    console.error('[email] SMTP não configurado: link de recuperação não enviado');
+    return false;
   }
   console.log('Reset link:', resetUrl);
   return true;
@@ -336,25 +365,74 @@ const parsePrinterPreferences = (value) => {
 
 // ── Auth helper ──────────────────────────────────────────────────────
 
+const safeEqual = (a, b) => {
+  const ba = Buffer.from(String(a)), bb = Buffer.from(String(b));
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+};
+
 const authenticateUser = async (email, senha) => {
   const user = await findUserByEmail(email);
   if (!user) return null;
   const stored = String(user.senhahash || '');
-  const senhaStr = String(senha);
-  if (!stored) return null;
-  if (stored === senhaStr) return user;
-  const sha256 = crypto.createHash('sha256').update(senhaStr).digest('hex');
-  if (stored === sha256) return user;
+  const senhaStr = String(senha || '');
+  if (!stored || !senhaStr) return null;
   if (stored.startsWith('$2')) {
-    try { if (await bcrypt.compare(senhaStr, stored)) return user; } catch { /* no-op */ }
+    try { return (await bcrypt.compare(senhaStr, stored)) ? user : null; } catch { return null; }
   }
-  return null;
+  // Contas antigas (texto puro ou sha256): confere e migra para bcrypt.
+  // Antes, mandar o próprio hash como senha também logava.
+  const legacyOk = /^[0-9a-f]{64}$/i.test(stored)
+    ? safeEqual(crypto.createHash('sha256').update(senhaStr).digest('hex'), stored.toLowerCase())
+    : safeEqual(senhaStr, stored);
+  if (!legacyOk) return null;
+  const senhahash = await bcrypt.hash(senhaStr, 10);
+  if (await updateUserRecord(user.__id, { senhahash })) user.senhahash = senhahash;
+  return user;
 };
 
-const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
-const generateToken = () => crypto.randomBytes(32).toString('hex');
+// ── Sessões ───────────────────────────────────────────────────────────
+// Token assinado (HMAC) com email, validade e uma "impressão" do hash da senha:
+// trocar a senha invalida todos os tokens antigos. A senha não trafega mais
+// a cada requisição, só no login.
+const SESSION_TTL_MS = {
+  web: 24 * 60 * 60 * 1000,
+  webRemember: 30 * 24 * 60 * 60 * 1000,
+  kiosk: 2 * 60 * 60 * 1000,
+};
 
-const resetTokens = new Map();
+const passwordStamp = (user) => hmac(`pw|${user.senhahash || ''}`).slice(0, 16);
+
+const createSessionToken = (user, ttlMs) => {
+  const payload = Buffer.from(JSON.stringify({ e: normalizeEmail(user.email), x: Date.now() + ttlMs, p: passwordStamp(user) })).toString('base64url');
+  return `${payload}.${hmac(`session|${payload}`)}`;
+};
+
+const verifySessionToken = async (token) => {
+  const [payload, sig] = String(token || '').split('.');
+  if (!payload || !sig || !safeEqual(sig, hmac(`session|${payload}`))) return null;
+  let data;
+  try { data = JSON.parse(Buffer.from(payload, 'base64url').toString()); } catch { return null; }
+  if (!data?.e || !(Number(data.x) > Date.now())) return null;
+  const user = await findUserByEmail(data.e);
+  if (!user || !safeEqual(String(data.p || ''), passwordStamp(user))) return null;
+  return user;
+};
+
+const requireAuth = async (req, res, next) => {
+  const m = /^Bearer\s+(\S+)$/i.exec(req.get('authorization') || '');
+  try {
+    const user = m ? await verifySessionToken(m[1]) : null;
+    if (!user) return res.status(401).json({ error: 'Sessão expirada. Faça login novamente.', code: 'SESSION_EXPIRED' });
+    req.user = user;
+    next();
+  } catch (err) {
+    console.error('Auth error:', err);
+    res.status(500).json({ error: 'Falha na autenticação' });
+  }
+};
+
+const generateCode = () => crypto.randomInt(100000, 1000000).toString();
+
 
 // ── Validation rules ─────────────────────────────────────────────────
 const INSTITUTIONAL_EMAIL_RE = /@(?:academico\.)?ifsul\.edu\.br$/i;
@@ -428,8 +506,11 @@ app.post('/api/register', async (req, res) => {
 
     if (!ok) return res.status(500).json({ error: 'Falha ao criar conta' });
 
-    await sendVerificationEmail(normEmail, code);
-    res.status(201).json({ message: 'Conta criada. Verifique seu email.' });
+    const emailSent = await sendVerificationEmail(normEmail, code);
+    res.status(201).json({
+      message: emailSent ? 'Conta criada. Verifique seu email.' : 'Conta criada, mas não foi possível enviar o email. Use "Reenviar código".',
+      emailSent,
+    });
   } catch (err) {
     console.error('Register error:', err);
     res.status(500).json({ error: 'Falha no registro' });
@@ -453,7 +534,6 @@ app.post('/api/verify-email', async (req, res) => {
     if (new Date() > expires) return res.status(400).json({ error: 'Código expirado. Solicite um novo.' });
 
     await updateUserRecord(user.__id, {
-      ...user,
       verificado: 'true',
       codigoverificacao: '',
       codigoexpiraem: '',
@@ -479,8 +559,10 @@ app.post('/api/resend-code', async (req, res) => {
 
     const code = generateCode();
     const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    await updateUserRecord(user.__id, { ...user, codigoverificacao: code, codigoexpiraem: expires });
-    await sendVerificationEmail(normEmail, code);
+    await updateUserRecord(user.__id, { codigoverificacao: code, codigoexpiraem: expires });
+    if (!(await sendVerificationEmail(normEmail, code))) {
+      return res.status(502).json({ error: 'Não foi possível enviar o email. Tente novamente em instantes.' });
+    }
     res.json({ message: 'Código reenviado' });
   } catch (err) {
     console.error('Resend code error:', err);
@@ -490,7 +572,7 @@ app.post('/api/resend-code', async (req, res) => {
 
 // ── Login ────────────────────────────────────────────────────────────
 app.post('/api/login', async (req, res) => {
-  const { email, senha } = req.body;
+  const { email, senha, remember, client } = req.body;
   if (!email || !senha) return res.status(400).json({ error: 'Email e senha são obrigatórios' });
   const normEmail = String(email).trim().toLowerCase();
 
@@ -500,36 +582,47 @@ app.post('/api/login', async (req, res) => {
     if (String(user.verificado).toLowerCase() !== 'true') {
       return res.status(403).json({ error: 'Email não verificado. Verifique sua caixa de entrada.' });
     }
-    await updateUserRecord(user.__id, { ...user, ultimologinem: new Date().toISOString() });
+    await updateUserRecord(user.__id, { ultimologinem: new Date().toISOString() });
     const prefs = parsePrinterPreferences(user.printerpreferences);
-    res.json({ message: 'Login efetuado com sucesso', displayName: user.nome || normEmail, printColor: prefs.color, printDuplex: prefs.duplex });
+    const ttl = client === 'kiosk' ? SESSION_TTL_MS.kiosk : remember ? SESSION_TTL_MS.webRemember : SESSION_TTL_MS.web;
+    res.json({
+      message: 'Login efetuado com sucesso',
+      token: createSessionToken(user, ttl),
+      email: normalizeEmail(user.email),
+      displayName: user.nome || normEmail,
+      printColor: prefs.color,
+      printDuplex: prefs.duplex,
+    });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Falha no login' });
   }
 });
 
-// ── Users list (autocomplete) ────────────────────────────────────────
-app.get('/api/users', async (_req, res) => {
+// ── Users search (autocomplete do compartilhamento) ──────────────────
+// Antes era GET /api/users sem login, que devolvia nome e email de todos os alunos.
+app.post('/api/users/search', requireAuth, async (req, res) => {
+  const q = String(req.body.q || '').trim().toLowerCase();
+  if (q.length < 3) return res.json({ users: [] });
   try {
+    const { user } = req;
     const records = await listAllRecords();
     const users = records
-      .filter((r) => r.email)
+      .filter((r) => r.email && String(r.verificado).toLowerCase() === 'true' && normalizeEmail(r.email) !== normalizeEmail(user.email))
+      .filter((r) => normalizeEmail(r.email).includes(q) || String(r.nome || '').toLowerCase().includes(q))
+      .slice(0, 5)
       .map((r) => ({ email: String(r.email), nome: String(r.nome || r.email) }));
     res.json({ users });
   } catch (err) {
-    console.error('List users error:', err);
-    res.status(500).json({ error: 'Falha ao listar usuários' });
+    console.error('Search users error:', err);
+    res.status(500).json({ error: 'Falha ao buscar usuários' });
   }
 });
 
 // ── Documents ────────────────────────────────────────────────────────
-app.post('/api/documents', async (req, res) => {
-  const { email, senha } = req.body;
-  if (!email || !senha) return res.status(400).json({ error: 'Credenciais ausentes' });
+app.post('/api/documents', requireAuth, async (req, res) => {
   try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const { user } = req;
     const docs = normalizeDocUrls(parseJsonField(user.documentos, []));
     res.json({
       documents: docs,
@@ -542,26 +635,12 @@ app.post('/api/documents', async (req, res) => {
   }
 });
 
-// ── Upload helpers ───────────────────────────────────────────────────
-async function uploadToR2(fileBuffer, fileName, contentType) {
-  const key = buildR2Key(fileName);
-  await r2.send(new PutObjectCommand({
-    Bucket: R2_BUCKET,
-    Key: key,
-    Body: fileBuffer,
-    ContentType: contentType || 'application/octet-stream',
-  }));
-  const publicUrl = publicUrlForKey(key);
-  console.log('R2 upload OK:', publicUrl);
-  return publicUrl;
-}
-
 // ── Presigned upload (arquivos grandes direto para o R2, sem passar pela Vercel) ──
-app.post('/api/upload/presign', async (req, res) => {
-  const { email, senha, filename, contentType, size } = req.body;
-  if (!email || !senha) return res.status(400).json({ error: 'Credenciais ausentes' });
+app.post('/api/upload/presign', requireAuth, async (req, res) => {
+  const { filename, contentType, size } = req.body;
   const fileSize = Number(size) || 0;
   if (!filename) return res.status(400).json({ error: 'Nome do arquivo ausente' });
+  if (!isAllowedMime(contentType)) return res.status(400).json({ error: 'Tipo de arquivo inválido.' });
   if (fileSize > PER_FILE_LIMIT_BYTES) {
     return res.status(413).json({
       error: `Arquivo muito grande. O limite é ${PER_FILE_LIMIT_BYTES / (1024 * 1024)} MB por arquivo.`,
@@ -570,15 +649,14 @@ app.post('/api/upload/presign', async (req, res) => {
     });
   }
   try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const { user } = req;
     const docs = parseJsonField(user.documentos, []);
     if (storageLimitReached(getUsedStorageBytes(docs), fileSize)) return storageErrorResponse(res);
 
-    const key = buildR2Key(filename);
+    const key = buildR2Key(user.email, filename);
     const uploadUrl = await getSignedUrl(
       r2,
-      new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: contentType || 'application/octet-stream' }),
+      new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: contentType }),
       { expiresIn: 600 },
     );
     return res.json({
@@ -595,48 +673,11 @@ app.post('/api/upload/presign', async (req, res) => {
   }
 });
 
-app.post('/api/upload', (req, res) => {
-  upload.single('file')(req, res, async (error) => {
-    if (error) {
-      const code = error.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : undefined;
-      const msg = error.code === 'LIMIT_FILE_SIZE'
-        ? `Arquivo muito grande. O limite é ${PER_FILE_LIMIT_BYTES / (1024 * 1024)} MB por arquivo.`
-        : (error.message || 'File upload failed');
-      return res.status(code ? 413 : 400).json({ error: msg, code, limitBytes: PER_FILE_LIMIT_BYTES });
-    }
-    if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
-
-    // Enforce per-user storage quota before uploading to R2 (avoids orphan files)
-    const { email, senha } = req.body || {};
-    if (email && senha) {
-      try {
-        const user = await authenticateUser(email, senha);
-        if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
-        const docs = parseJsonField(user.documentos, []);
-        if (storageLimitReached(getUsedStorageBytes(docs), req.file.size)) {
-          return storageErrorResponse(res);
-        }
-      } catch (err) {
-        console.error('Upload quota check error:', err);
-        return res.status(500).json({ error: 'Falha ao verificar armazenamento' });
-      }
-    }
-
-    const fileUrl = await uploadToR2(req.file.buffer, req.file.originalname, req.file.mimetype);
-    if (!fileUrl) return res.status(500).json({ error: 'Falha ao enviar arquivo. Tente novamente.' });
-
-    return res.status(200).json({
-      message: 'File uploaded successfully',
-      file: { filename: fileUrl, originalname: req.file.originalname, mimetype: req.file.mimetype, size: req.file.size, url: fileUrl },
-    });
-  });
-});
-
 // Serve fallback uploads (legacy local files)
 app.get('/uploads/:file', (req, res) => {
   const file = path.basename(req.params.file || '');
   if (!file) return res.status(404).json({ error: 'Arquivo não encontrado' });
-  for (const dir of [os.tmpdir(), path.join(__dirname, 'uploads'), path.join(process.cwd(), 'uploads')]) {
+  for (const dir of [path.join(__dirname, 'uploads'), path.join(process.cwd(), 'uploads')]) {
     const candidate = path.join(dir, file);
     if (fs.existsSync(candidate)) return res.sendFile(candidate);
   }
@@ -644,33 +685,53 @@ app.get('/uploads/:file', (req, res) => {
 });
 
 // ── Add document ─────────────────────────────────────────────────────
-app.post('/api/add-document', async (req, res) => {
-  const { email, senha, documentName, filename, originalname, mimetype, size, url } = req.body;
-  if (!email || !senha || !documentName || !filename) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+app.post('/api/add-document', requireAuth, async (req, res) => {
+  const { documentName, originalname, url } = req.body;
+  if (!documentName || !url) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
   try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const { user } = req;
+
+    // A URL tem que ser de um upload que este aluno acabou de pedir via presign
+    const key = r2KeyFromUrl(url);
+    if (!key || url !== publicUrlForKey(key) || !verifyUploadKey(user.email, key)) {
+      return res.status(400).json({ error: 'Arquivo inválido. Envie o arquivo novamente.' });
+    }
 
     const docs = parseJsonField(user.documentos, []);
+    if (docs.some((d) => d.url === url)) return res.status(409).json({ error: 'Documento já adicionado' });
+
+    // Tamanho e tipo reais vêm do R2, não do que o cliente informou
+    let head;
+    try {
+      head = await r2.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    } catch {
+      return res.status(400).json({ error: 'Arquivo não encontrado no armazenamento. Envie novamente.' });
+    }
+    const size = Number(head.ContentLength) || 0;
+    if (size > PER_FILE_LIMIT_BYTES) {
+      await deleteFromR2(url);
+      return res.status(413).json({ error: `Arquivo muito grande. O limite é ${PER_FILE_LIMIT_BYTES / (1024 * 1024)} MB por arquivo.`, code: 'FILE_TOO_LARGE', limitBytes: PER_FILE_LIMIT_BYTES });
+    }
+
     const newDoc = {
       id: Date.now().toString(),
-      name: documentName,
-      filename,
-      originalname: originalname || '',
-      mimetype: mimetype || '',
-      size: size || 0,
-      url: url || '',
+      name: String(documentName).slice(0, 200),
+      filename: url,
+      originalname: String(originalname || '').slice(0, 200),
+      mimetype: head.ContentType || 'application/octet-stream',
+      size,
+      url,
       uploadedAt: new Date().toISOString(),
     };
 
     // Enforce 50 MB per-user storage quota (own documents only)
-    if (storageLimitReached(getUsedStorageBytes(docs), newDoc.size)) {
-      await deleteFromR2(newDoc.url);
+    if (storageLimitReached(getUsedStorageBytes(docs), size)) {
+      await deleteFromR2(url);
       return storageErrorResponse(res);
     }
 
     docs.push(newDoc);
-    const ok = await updateUserRecord(user.__id, { ...user, documentos: JSON.stringify(docs) });
+    const ok = await updateUserRecord(user.__id, { documentos: JSON.stringify(docs) });
     if (!ok) throw new Error('Falha ao atualizar usuário');
     res.json({ message: 'Documento adicionado', document: newDoc });
   } catch (err) {
@@ -680,18 +741,17 @@ app.post('/api/add-document', async (req, res) => {
 });
 
 // ── Delete document ──────────────────────────────────────────────────
-app.post('/api/delete-document', async (req, res) => {
-  const { email, senha, documentId } = req.body;
-  if (!email || !senha || !documentId) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+app.post('/api/delete-document', requireAuth, async (req, res) => {
+  const { documentId } = req.body;
+  if (!documentId) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
   try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const { user } = req;
 
     let docs = parseJsonField(user.documentos, []);
     const idx = docs.findIndex((d) => d.id === documentId);
     if (idx === -1) return res.status(404).json({ error: 'Documento não encontrado' });
     const [removed] = docs.splice(idx, 1);
-    await updateUserRecord(user.__id, { ...user, documentos: JSON.stringify(docs) });
+    await updateUserRecord(user.__id, { documentos: JSON.stringify(docs) });
     if (isOwnDoc(removed)) await deleteFromR2(removed && removed.url);
     res.json({ message: 'Documento excluído' });
   } catch (err) {
@@ -701,12 +761,9 @@ app.post('/api/delete-document', async (req, res) => {
 });
 
 // ── Credits ──────────────────────────────────────────────────────────
-app.get('/api/credits', async (req, res) => {
-  const { email, senha } = req.query;
-  if (!email || !senha) return res.status(400).json({ error: 'Credenciais ausentes' });
+app.get('/api/credits', requireAuth, async (req, res) => {
   try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const { user } = req;
     const credits = Number(user.creditos || 0);
     const transactions = parseJsonField(user.transacoes, []);
     res.json({ credits, transactions });
@@ -716,43 +773,17 @@ app.get('/api/credits', async (req, res) => {
   }
 });
 
-app.post('/api/credits/add', async (req, res) => {
-  const { email, senha, amount, description } = req.body;
-  if (!email || !senha || !amount) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
-  try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
-
-    const creditAmount = round2(Number(amount));
-    if (!(creditAmount > 0)) return res.status(400).json({ error: 'Valor inválido' });
-
-    const current = Number(user.creditos || 0);
-    const newBalance = round2(current + creditAmount);
-
-    const transactions = parseJsonField(user.transacoes, []);
-    transactions.push({ amount: creditAmount, description: description || 'Adição de créditos', type: 'credit', createdAt: new Date().toISOString() });
-
-    await updateUserRecord(user.__id, { ...user, creditos: String(newBalance), transacoes: JSON.stringify(transactions) });
-    res.json({ credits: newBalance, transactions });
-  } catch (err) {
-    console.error('Add credits error:', err);
-    res.status(500).json({ error: 'Falha ao adicionar créditos' });
-  }
-});
-
 // ── Print Preferences ────────────────────────────────────────────────
-app.post('/api/user/print-preferences', async (req, res) => {
-  const { email, senha, printColor, printDuplex } = req.body;
-  if (!email || !senha) return res.status(400).json({ error: 'Credenciais obrigatórias' });
+app.post('/api/user/print-preferences', requireAuth, async (req, res) => {
+  const { printColor, printDuplex } = req.body;
   if (!['color', 'bw'].includes(printColor) || !['single', 'duplex'].includes(printDuplex)) {
     return res.status(400).json({ error: 'Valores inválidos para preferências' });
   }
   try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const { user } = req;
 
     const prefs = JSON.stringify({ color: printColor, duplex: printDuplex });
-    const ok = await updateUserRecord(user.__id, { ...user, printerpreferences: prefs });
+    const ok = await updateUserRecord(user.__id, { printerpreferences: prefs });
     if (!ok) throw new Error('Falha ao salvar preferências');
     res.json({ message: 'Preferências salvas', printColor, printDuplex });
   } catch (err) {
@@ -761,12 +792,9 @@ app.post('/api/user/print-preferences', async (req, res) => {
   }
 });
 
-app.get('/api/user/print-preferences', async (req, res) => {
-  const { email, senha } = req.query;
-  if (!email || !senha) return res.status(400).json({ error: 'Credenciais obrigatórias' });
+app.get('/api/user/print-preferences', requireAuth, async (req, res) => {
   try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const { user } = req;
     const prefs = parsePrinterPreferences(user.printerpreferences);
     res.json({ printColor: prefs.color, printDuplex: prefs.duplex });
   } catch (err) {
@@ -776,21 +804,45 @@ app.get('/api/user/print-preferences', async (req, res) => {
 });
 
 // ── Print ────────────────────────────────────────────────────────────
-app.post('/api/print', async (req, res) => {
-  const { email, senha, documentId, documentName, pages, cost, color, duplex } = req.body;
-  if (!email || !senha || !documentId) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
-  try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+// O preço é sempre calculado aqui; o "cost" enviado pelo cliente é ignorado.
+const resolvePrint = (user, { pages, color, duplex }) => {
+  const prefs = parsePrinterPreferences(user.printerpreferences);
+  const printColor = color === 'color' || color === 'bw' ? color : prefs.color;
+  const printDuplex = duplex === 'duplex' || duplex === 'single' ? duplex : prefs.duplex;
+  const n = Number(pages);
+  if (!Number.isInteger(n) || n < 1 || n > 2000) return { error: 'Número de páginas inválido' };
+  if (printDuplex === 'duplex' && n < 2) return { error: 'Frente e verso requer pelo menos 2 páginas' };
+  return { printColor, printDuplex, pages: n, cost: getPrintCost(printColor, printDuplex, n) };
+};
 
-    const prefs = parsePrinterPreferences(user.printerpreferences);
-    const printColor = color === 'color' ? 'color' : (color === 'bw' ? 'bw' : prefs.color);
-    const printDuplex = duplex === 'duplex' ? 'duplex' : (duplex === 'single' ? 'single' : prefs.duplex);
-    if (printDuplex === 'duplex' && (Number(pages) || 1) < 2) {
-      return res.status(400).json({ error: 'Frente e verso requer pelo menos 2 páginas' });
-    }
-    const printCost = round2(Number(cost) > 0 ? cost : getPrintCost(printColor, printDuplex, pages));
-    if (!(printCost > 0)) return res.status(400).json({ error: 'Valor de impressão inválido' });
+app.post('/api/print/quote', requireAuth, async (req, res) => {
+  try {
+    const { user } = req;
+    const job = resolvePrint(user, req.body);
+    if (job.error) return res.status(400).json({ error: job.error });
+    const credits = Number(user.creditos || 0);
+    res.json({ cost: job.cost, credits, enough: credits >= job.cost });
+  } catch (err) {
+    console.error('Print quote error:', err);
+    res.status(500).json({ error: 'Falha ao calcular impressão' });
+  }
+});
+
+app.post('/api/print', requireAuth, async (req, res) => {
+  const { documentId, documentName, clientRef } = req.body;
+  if (!documentId) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+  try {
+    const { user } = req;
+
+    const job = resolvePrint(user, req.body);
+    if (job.error) return res.status(400).json({ error: job.error });
+    const { printColor, printDuplex, pages, cost: printCost } = job;
+
+    const history = parseJsonField(user.historicoimpressao, []);
+    // Reenvio do mesmo débito (ex.: kiosk repetindo após falha de rede) não cobra de novo
+    const ref = clientRef ? String(clientRef).slice(0, 100) : '';
+    const previous = ref && history.find((h) => h.clientRef === ref);
+    if (previous) return res.json({ message: 'Impressão já registrada', printRecord: previous, credits: Number(user.creditos || 0) });
 
     const current = Number(user.creditos || 0);
     if (current < printCost) return res.status(402).json({ error: 'Créditos insuficientes' });
@@ -799,15 +851,15 @@ app.post('/api/print', async (req, res) => {
       id: Date.now().toString(),
       documentId,
       documentName: documentName || 'Unknown',
-      pages: pages || 1,
+      pages,
       color: printColor,
       duplex: printDuplex,
       cost: printCost,
       status: 'completed',
       printedAt: new Date().toISOString(),
+      ...(ref ? { clientRef: ref } : {}),
     };
 
-    const history = parseJsonField(user.historicoimpressao, []);
     history.push(printRecord);
 
     const transactions = parseJsonField(user.transacoes, []);
@@ -815,12 +867,12 @@ app.post('/api/print', async (req, res) => {
     transactions.push({ amount: -printCost, description: `Impressão: ${documentName || 'Documento'} (${printDuplex === 'duplex' ? 'frente e verso, ' : ''}${configLabel})`, type: 'debit', createdAt: new Date().toISOString() });
 
     const newBalance = round2(current - printCost);
-    await updateUserRecord(user.__id, {
-      ...user,
+    const ok = await updateUserRecord(user.__id, {
       creditos: String(newBalance),
       historicoimpressao: JSON.stringify(history),
       transacoes: JSON.stringify(transactions),
     });
+    if (!ok) throw new Error('Falha ao gravar débito');
 
     res.json({ message: 'Impressão concluída', printRecord, credits: newBalance });
   } catch (err) {
@@ -830,12 +882,9 @@ app.post('/api/print', async (req, res) => {
 });
 
 // ── Print history ────────────────────────────────────────────────────
-app.get('/api/print-history', async (req, res) => {
-  const { email, senha } = req.query;
-  if (!email || !senha) return res.status(400).json({ error: 'Credenciais ausentes' });
+app.get('/api/print-history', requireAuth, async (req, res) => {
   try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const { user } = req;
     const history = parseJsonField(user.historicoimpressao, []);
     history.sort((a, b) => new Date(b.printedAt) - new Date(a.printedAt));
     res.json({ printHistory: history });
@@ -846,12 +895,12 @@ app.get('/api/print-history', async (req, res) => {
 });
 
 // ── Share document ───────────────────────────────────────────────────
-app.post('/api/share-document', async (req, res) => {
-  const { email, senha, targetEmail, documentId, documentName, message } = req.body;
-  if (!email || !senha || !targetEmail || !documentId) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+app.post('/api/share-document', requireAuth, async (req, res) => {
+  const { targetEmail, documentId, documentName, message } = req.body;
+  if (!targetEmail || !documentId) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
   try {
-    const sender = await authenticateUser(email, senha);
-    if (!sender) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const sender = req.user;
+    const email = sender.email;
     const senderName = sender.nome || email;
 
     // Find document in sender
@@ -895,7 +944,6 @@ app.post('/api/share-document', async (req, res) => {
     });
 
     await updateUserRecord(target.__id, {
-      ...target,
       documentos: JSON.stringify(targetDocs),
       notificacoes: JSON.stringify(notifications),
     });
@@ -908,13 +956,12 @@ app.post('/api/share-document', async (req, res) => {
 });
 
 // ── Handle share ─────────────────────────────────────────────────────
-app.post('/api/handle-share', async (req, res) => {
-  const { email, senha, notificationId, action } = req.body;
-  if (!email || !senha || !notificationId || !action) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+app.post('/api/handle-share', requireAuth, async (req, res) => {
+  const { notificationId, action } = req.body;
+  if (!notificationId || !action) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
   if (!['accepted', 'rejected'].includes(action)) return res.status(400).json({ error: 'Ação inválida' });
   try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const { user } = req;
 
     const notifications = parseJsonField(user.notificacoes, []);
     const notifIdx = notifications.findIndex((n) => n.id === notificationId);
@@ -928,13 +975,11 @@ app.post('/api/handle-share', async (req, res) => {
       const docId = notifications[notifIdx].documento_id;
       const filtered = docs.filter((d) => d.id !== docId);
       await updateUserRecord(user.__id, {
-        ...user,
         notificacoes: JSON.stringify(notifications),
         documentos: JSON.stringify(filtered),
       });
     } else {
       await updateUserRecord(user.__id, {
-        ...user,
         notificacoes: JSON.stringify(notifications),
       });
     }
@@ -947,12 +992,9 @@ app.post('/api/handle-share', async (req, res) => {
 });
 
 // ── Notifications ────────────────────────────────────────────────────
-app.get('/api/notifications', async (req, res) => {
-  const { email, senha } = req.query;
-  if (!email || !senha) return res.status(400).json({ error: 'Credenciais ausentes' });
+app.get('/api/notifications', requireAuth, async (req, res) => {
   try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const { user } = req;
     const notifications = parseJsonField(user.notificacoes, []);
     notifications.sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
     res.json({ notifications });
@@ -966,31 +1008,6 @@ app.get('/api/notifications', async (req, res) => {
 const INFINITE_HANDLE = 'ryan-montiel';
 const INFINITE_API = 'https://api.checkout.infinitepay.io';
 
-const addCreditsToUser = async (targetEmail, amount, description) => {
-  const user = await findUserByEmail(targetEmail);
-  if (!user) throw new Error(`Usuário ${targetEmail} não encontrado`);
-  const creditAmount = round2(Number(amount));
-  const current = Number(user.creditos || 0);
-  const newBalance = round2(current + creditAmount);
-
-  const transactions = parseJsonField(user.transacoes, []);
-  transactions.push({ amount: creditAmount, description: description || 'Créditos via pagamento', type: 'credit', createdAt: new Date().toISOString() });
-
-  console.log('[addCreditsToUser] updating:', { userId: user.__id, email: targetEmail, current, newBalance, transactionsCount: transactions.length });
-  const resp = await fetchWithTimeout(`${await recordsUrl()}/${user.__id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
-    body: JSON.stringify({ creditos: String(newBalance), transacoes: JSON.stringify(transactions) }),
-  });
-  console.log('[addCreditsToUser] patch response:', resp.status, resp.statusText);
-  if (!resp.ok && resp.status !== 204) {
-    const text = await resp.text().catch(() => '');
-    console.error('[addCreditsToUser] patch failed:', text);
-    throw new Error(`Falha ao atualizar créditos (${resp.status}): ${text.slice(0,200)}`);
-  }
-  console.log('[addCreditsToUser] success for:', targetEmail);
-};
-
 const readPendingForUser = (user) => parseJsonField(user.pagamentospendentes, {});
 
 const writePendingForUser = async (user, pending) => {
@@ -999,10 +1016,9 @@ const writePendingForUser = async (user, pending) => {
     headers: { 'Content-Type': 'application/json', 'Authorization': getBasicAuthHeader() },
     body: JSON.stringify({ pagamentospendentes: JSON.stringify(pending) }),
   });
-  console.log('[writePendingForUser] patch response:', resp.status);
   if (!resp.ok && resp.status !== 204) {
     const text = await resp.text().catch(() => '');
-    console.error('[writePendingForUser] patch failed:', text);
+    console.error('[writePendingForUser] patch failed:', resp.status, text);
     return false;
   }
   return true;
@@ -1017,15 +1033,79 @@ const findPendingPaymentOwner = async (order_nsu) => {
   return null;
 };
 
-app.post('/api/create-payment-link', async (req, res) => {
-  const { email, senha, amount, redirect_url } = req.body;
-  console.log('[create-payment-link] request:', { email, amount, redirect_url });
-  if (!email || !senha || !amount || amount <= 0) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
-  try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+// Consulta a InfinitePay. Retorna os dados só se o pagamento estiver confirmado.
+const checkInfinitePay = async (order_nsu, { slug, transaction_nsu } = {}) => {
+  const checkPayload = { handle: INFINITE_HANDLE, order_nsu };
+  if (slug) checkPayload.slug = slug;
+  if (transaction_nsu) checkPayload.transaction_nsu = transaction_nsu;
+  const resp = await fetchWithTimeout(`${INFINITE_API}/payment_check`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(checkPayload),
+  });
+  if (!resp.ok) {
+    console.error('[checkInfinitePay] status', resp.status, 'order', order_nsu);
+    return null;
+  }
+  const data = await safeJson(resp);
+  return data?.paid ? data : null;
+};
 
-    const order_nsu = `pf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+// Confirma um pagamento pendente na InfinitePay e credita o aluno uma única vez.
+// Créditos e status do pedido são gravados no mesmo PATCH, a partir de um registro
+// recém-lido, para que webhook e check-payment simultâneos não creditem em dobro.
+const confirmPayment = async (ownerEmail, order_nsu, hints = {}) => {
+  const user = await findUserByEmail(ownerEmail);
+  if (!user) return { status: 'not_found' };
+  const pending = readPendingForUser(user);
+  const payment = pending[order_nsu];
+  if (!payment) return { status: 'not_found' };
+  if (payment.status === 'completed') return { status: 'already', amount: round2(payment.amount) };
+
+  const checkData = await checkInfinitePay(order_nsu, hints);
+  if (!checkData) return { status: 'unpaid' };
+
+  const transactions = parseJsonField(user.transacoes, []);
+  if (transactions.some((t) => t.order_nsu === order_nsu)) {
+    return { status: 'already', amount: round2(payment.amount) };
+  }
+
+  const creditAmount = round2(Number(payment.amount));
+  const transaction_nsu = checkData.transaction_nsu || hints.transaction_nsu || '';
+  transactions.push({
+    amount: creditAmount,
+    description: `Créditos via InfinitePay (${transaction_nsu || order_nsu})`,
+    type: 'credit',
+    order_nsu,
+    createdAt: new Date().toISOString(),
+  });
+  pending[order_nsu] = {
+    ...payment,
+    status: 'completed',
+    paidAt: new Date().toISOString(),
+    transaction_nsu,
+    capture_method: checkData.capture_method || hints.capture_method || '',
+  };
+  const newBalance = round2(Number(user.creditos || 0) + creditAmount);
+
+  const ok = await updateUserRecord(user.__id, {
+    creditos: String(newBalance),
+    transacoes: JSON.stringify(transactions),
+    pagamentospendentes: JSON.stringify(pending),
+  });
+  if (!ok) throw new Error('Falha ao gravar créditos');
+  console.log('[confirmPayment] credited', creditAmount, 'order', order_nsu);
+  return { status: 'credited', amount: creditAmount };
+};
+
+app.post('/api/create-payment-link', requireAuth, async (req, res) => {
+  const { redirect_url } = req.body;
+  const amount = round2(Number(req.body.amount));
+  if (!(amount >= 1) || amount > 500) return res.status(400).json({ error: 'Valor inválido (mínimo R$ 1, máximo R$ 500)' });
+  try {
+    const { user } = req;
+
+    const order_nsu = `pf-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
     const priceInCents = Math.round(amount * 100);
     const defaultRedirect = redirect_url || `${req.protocol}://${req.get('host')}/credits`;
 
@@ -1038,7 +1118,6 @@ app.post('/api/create-payment-link', async (req, res) => {
       webhook_url: webhookUrl,
       payment_methods: ['pix'],
     };
-    console.log('[create-payment-link] payload:', { ...payload, webhook_url: webhookUrl.replace(/\/\/.*@/, '//***') });
 
     const resp = await fetchWithTimeout(`${INFINITE_API}/links`, {
       method: 'POST',
@@ -1053,17 +1132,12 @@ app.post('/api/create-payment-link', async (req, res) => {
     }
 
     const data = await safeJson(resp);
-    console.log('[create-payment-link] infinitepay response:', { url: data?.url, order_nsu });
     if (!data?.url) return res.status(502).json({ error: 'Resposta inválida da InfinitePay' });
 
     const pending = readPendingForUser(user);
-    pending[order_nsu] = { email, amount, status: 'pending', createdAt: new Date().toISOString() };
+    pending[order_nsu] = { email: user.email, amount, status: 'pending', createdAt: new Date().toISOString() };
     const saved = await writePendingForUser(user, pending);
-    if (!saved) {
-      console.error('[create-payment-link] Falha ao salvar pagamento pendente para:', user.email);
-      return res.status(500).json({ error: 'Falha ao registrar pagamento pendente' });
-    }
-    console.log('[create-payment-link] pending saved for:', user.email, 'order_nsu:', order_nsu);
+    if (!saved) return res.status(500).json({ error: 'Falha ao registrar pagamento pendente' });
 
     return res.json({ url: data.url, order_nsu });
   } catch (err) {
@@ -1072,178 +1146,51 @@ app.post('/api/create-payment-link', async (req, res) => {
   }
 });
 
-app.post('/api/check-payment', async (req, res) => {
-  const { email, senha, order_nsu, slug, transaction_nsu } = req.body;
-  console.log('[check-payment] request:', { email, order_nsu, slug, transaction_nsu });
-  if (!email || !senha || !order_nsu) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+app.post('/api/check-payment', requireAuth, async (req, res) => {
+  const { order_nsu, slug, transaction_nsu } = req.body;
+  if (!order_nsu) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
   try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const { user } = req;
 
-    const pending = readPendingForUser(user);
-    console.log('[check-payment] pending keys:', Object.keys(pending));
-    const payment = pending[order_nsu];
-    if (!payment) {
-      console.warn('[check-payment] payment NOT FOUND in pending:', order_nsu);
-      return res.status(404).json({ error: 'Pagamento não encontrado' });
-    }
-
-    if (payment.status === 'completed') {
-      console.log('[check-payment] already completed:', order_nsu);
-      return res.json({ paid: true, amount: round2(payment.amount) });
-    }
-
-    if (slug || transaction_nsu) {
-      const checkPayload = { handle: INFINITE_HANDLE, order_nsu };
-      if (slug) checkPayload.slug = slug;
-      if (transaction_nsu) checkPayload.transaction_nsu = transaction_nsu;
-      const checkResp = await fetchWithTimeout(`${INFINITE_API}/payment_check`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(checkPayload),
-      });
-      console.log('[check-payment] infinitepay response:', checkResp.status);
-      if (checkResp.ok) {
-        const checkData = await safeJson(checkResp);
-        console.log('[check-payment] check data:', checkData);
-        if (checkData?.paid) {
-          try {
-            await addCreditsToUser(email, payment.amount, `Créditos via InfinitePay (${transaction_nsu || order_nsu})`);
-            console.log('[check-payment] credits added for:', email);
-          } catch (e) {
-            console.error('[check-payment] addCreditsToUser failed:', e);
-            return res.status(500).json({ error: `Pagamento confirmado, mas falha ao adicionar créditos: ${e.message}` });
-          }
-          payment.status = 'completed';
-          payment.paidAt = new Date().toISOString();
-          payment.transaction_nsu = transaction_nsu || '';
-          pending[order_nsu] = payment;
-          await writePendingForUser(user, pending);
-          return res.json({ paid: true, amount: round2(payment.amount) });
-        }
-      }
-    }
-
-    return res.json({ received: true });
+    const result = await confirmPayment(user.email, String(order_nsu), { slug, transaction_nsu });
+    if (result.status === 'not_found') return res.status(404).json({ error: 'Pagamento não encontrado' });
+    if (result.status === 'unpaid') return res.json({ received: true });
+    return res.json({ paid: true, amount: result.amount });
   } catch (err) {
     console.error('[check-payment] error:', err);
     res.status(500).json({ error: 'Falha ao verificar pagamento' });
   }
 });
 
-app.post('/api/reprocess-payment', async (req, res) => {
-  const { email, senha, order_nsu } = req.body;
-  console.log('[reprocess-payment] request:', { email, order_nsu });
-  if (!email || !senha || !order_nsu) return res.status(400).json({ error: 'Campos obrigatórios' });
+app.post('/api/reprocess-payment', requireAuth, async (req, res) => {
+  const { order_nsu } = req.body;
+  if (!order_nsu) return res.status(400).json({ error: 'Campos obrigatórios' });
   try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
+    const { user } = req;
 
-    const pending = readPendingForUser(user);
-    const payment = pending[order_nsu];
-    if (!payment) return res.status(404).json({ error: 'Pagamento não encontrado' });
-
-    if (payment.status === 'completed') {
-      return res.json({ message: 'Já processado', paid: true, amount: round2(payment.amount) });
-    }
-
-    const checkPayload = { handle: INFINITE_HANDLE, order_nsu };
-    const checkResp = await fetchWithTimeout(`${INFINITE_API}/payment_check`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(checkPayload),
-    });
-    console.log('[reprocess-payment] infinitepay response:', checkResp.status);
-    if (!checkResp.ok) return res.status(502).json({ error: 'Falha ao consultar InfinitePay' });
-
-    const checkData = await safeJson(checkResp);
-    console.log('[reprocess-payment] check data:', checkData);
-    if (!checkData?.paid) return res.json({ paid: false, message: 'Pagamento ainda não confirmado' });
-
-    await addCreditsToUser(email, payment.amount, `Créditos via InfinitePay (reprocess) - ${order_nsu}`);
-    console.log('[reprocess-payment] credits added for:', email);
-
-    payment.status = 'completed';
-    payment.paidAt = new Date().toISOString();
-    payment.transaction_nsu = checkData.transaction_nsu || '';
-    pending[order_nsu] = payment;
-    await writePendingForUser(user, pending);
-
-    return res.json({ paid: true, amount: round2(payment.amount), message: 'Reprocessado com sucesso' });
+    const result = await confirmPayment(user.email, String(order_nsu));
+    if (result.status === 'not_found') return res.status(404).json({ error: 'Pagamento não encontrado' });
+    if (result.status === 'unpaid') return res.json({ paid: false, message: 'Pagamento ainda não confirmado' });
+    if (result.status === 'already') return res.json({ message: 'Já processado', paid: true, amount: result.amount });
+    return res.json({ paid: true, amount: result.amount, message: 'Reprocessado com sucesso' });
   } catch (err) {
     console.error('[reprocess-payment] error:', err);
     res.status(500).json({ error: 'Falha ao reprocessar' });
   }
 });
 
-app.post('/api/debug/add-credits', async (req, res) => {
-  const { email, senha, amount, description } = req.body;
-  if (!email || !senha || !amount) return res.status(400).json({ error: 'Campos obrigatórios' });
-  try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
-    await addCreditsToUser(email, amount, description || 'Debug manual');
-    const fresh = await findUserByEmail(email);
-    return res.json({ success: true, newCredits: fresh.creditos, transactions: parseJsonField(fresh.transacoes, []) });
-  } catch (err) {
-    console.error('[debug/add-credits] error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/debug/user', async (req, res) => {
-  const { email, senha } = req.body;
-  if (!email || !senha) return res.status(400).json({ error: 'Credenciais obrigatórias' });
-  try {
-    const user = await authenticateUser(email, senha);
-    if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
-    return res.json({
-      __id: user.__id,
-      email: user.email,
-      creditos: user.creditos,
-      transacoes: parseJsonField(user.transacoes, []),
-      pagamentospendentes: parseJsonField(user.pagamentospendentes, {}),
-    });
-  } catch (err) {
-    console.error('[debug/user] error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
+// O webhook não é autenticado: ele só serve de aviso. O crédito só acontece
+// depois que confirmPayment confirma o pagamento direto na InfinitePay.
 app.post('/api/webhook-infinitepay', async (req, res) => {
   try {
-    const { order_nsu, transaction_nsu, capture_method } = req.body;
-    console.log('[webhook-infinitepay] received:', { order_nsu, transaction_nsu, capture_method });
+    const { order_nsu, transaction_nsu, slug, capture_method } = req.body || {};
     if (!order_nsu) return res.status(400).json({ error: 'Missing order_nsu' });
 
-    const owner = await findPendingPaymentOwner(order_nsu);
-    if (!owner || !owner.__id) {
-      console.warn('[webhook-infinitepay] unknown order:', order_nsu);
-      return res.status(404).json({ error: 'Order not found' });
-    }
+    const owner = await findPendingPaymentOwner(String(order_nsu));
+    if (!owner) return res.status(404).json({ error: 'Order not found' });
 
-    const pending = readPendingForUser(owner);
-    const payment = pending[order_nsu];
-    if (!payment || payment.status === 'completed') {
-      console.log('[webhook-infinitepay] already completed or not found:', order_nsu);
-      return res.json({ received: true });
-    }
-
-    try {
-      await addCreditsToUser(payment.email, payment.amount, `Créditos via InfinitePay (${transaction_nsu || order_nsu})`);
-      console.log('[webhook-infinitepay] credits added for:', payment.email);
-    } catch (e) {
-      console.error('[webhook-infinitepay] failed to add credits:', e);
-      return res.status(500).json({ error: 'Failed to add credits' });
-    }
-
-    payment.status = 'completed';
-    payment.paidAt = new Date().toISOString();
-    payment.transaction_nsu = transaction_nsu || '';
-    payment.capture_method = capture_method || '';
-    pending[order_nsu] = payment;
-    await writePendingForUser(owner, pending);
-
+    const result = await confirmPayment(owner.email, String(order_nsu), { transaction_nsu, slug, capture_method });
+    if (result.status === 'unpaid') console.warn('[webhook-infinitepay] not confirmed by InfinitePay:', order_nsu);
     return res.json({ received: true });
   } catch (err) {
     console.error('[webhook-infinitepay] error:', err);
@@ -1251,14 +1198,62 @@ app.post('/api/webhook-infinitepay', async (req, res) => {
   }
 });
 
+// ── Password reset ───────────────────────────────────────────────────
+// Link assinado (não depende de memória do servidor, que se perde entre instâncias
+// da Vercel). Leva a "impressão" da senha atual: depois de usado, deixa de valer.
+const RESET_TTL_MS = 15 * 60 * 1000;
+
+const createResetCode = (user) => {
+  const payload = Buffer.from(JSON.stringify({ e: normalizeEmail(user.email), x: Date.now() + RESET_TTL_MS, p: passwordStamp(user) })).toString('base64url');
+  return `${payload}.${hmac(`reset|${payload}`).slice(0, 32)}`;
+};
+
+const verifyResetCode = async (code) => {
+  const [payload, sig] = String(code || '').split('.');
+  if (!payload || !sig || !safeEqual(sig, hmac(`reset|${payload}`).slice(0, 32))) return { error: 'Link invalido' };
+  let data;
+  try { data = JSON.parse(Buffer.from(payload, 'base64url').toString()); } catch { return { error: 'Link invalido' }; }
+  if (!(Number(data.x) > Date.now())) return { error: 'Link expirado' };
+  const user = await findUserByEmail(data.e);
+  if (!user || !safeEqual(String(data.p || ''), passwordStamp(user))) return { error: 'Link invalido ou ja utilizado' };
+  return { user };
+};
+
+app.post('/api/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email obrigatorio' });
+  // Mesma resposta exista ou não a conta (não revela quem está cadastrado)
+  const generic = { message: 'Se o email estiver cadastrado, enviaremos um link de recuperação.' };
+  try {
+    const user = await findUserByEmail(normalizeEmail(email));
+    if (!user) return res.json(generic);
+    const sent = await sendPasswordResetEmail(normalizeEmail(user.email), createResetCode(user));
+    if (!sent) return res.status(502).json({ error: 'Não foi possível enviar o email. Tente novamente em instantes.' });
+    res.json(generic);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Erro' }); }
+});
+
+app.post('/api/reset-password', async (req, res) => {
+  const { code, senha } = req.body;
+  if (!code || !senha) return res.status(400).json({ error: 'Campos obrigatorios' });
+  if (!isValidPassword(senha)) return res.status(400).json({ error: 'Senha fraca' });
+  try {
+    const { user, error } = await verifyResetCode(code);
+    if (error) return res.status(400).json({ error });
+    const hash = await bcrypt.hash(senha, 10);
+    const ok = await updateUserRecord(user.__id, { senhahash: hash });
+    if (!ok) throw new Error('Falha ao salvar senha');
+    res.json({ message: 'Senha redefinida' });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Erro' }); }
+});
+
 // ── Serve built frontend ─────────────────────────────────────────────
 const __dist = path.join(__dirname, 'dist');
 if (fs.existsSync(__dist)) {
   app.use(express.static(__dist));
-  app.get('*', (req, res) => {
-    if (!req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
-      res.sendFile(path.join(__dist, 'index.html'));
-    }
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
+    res.sendFile(path.join(__dist, 'index.html'));
   });
 }
 
@@ -1271,43 +1266,5 @@ if (!process.env.VERCEL) {
   });
 }
 
-app.post('/api/forgot-password', async (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ error: 'Email obrigatorio' });
-  const norm = String(email).trim().toLowerCase();
-  try {
-    const user = await findUserByEmail(norm);
-    if (!user) return res.status(404).json({ error: 'email nao cadastrado' });
-    const token = generateToken();
-    const expires = Date.now() + 15*60000;
-    resetTokens.clear();
-    const code = crypto.randomBytes(12).toString('base64url');
-    resetTokens.set(code, { email: norm, expires });
-    await sendPasswordResetEmail(norm, code);
-    const frontend = process.env.FRONTEND_URL || '';
-    const base = frontend.startsWith('http')
-      ? frontend.replace(/\/$/, '')
-      : 'https://tcc-printflow.vercel.app';
-    const resetUrl = `${base}/reset-password?code=${code}`;
-    console.log('[forgot-password] resetUrl:', resetUrl);
-    res.json({ message: 'Link de recuperacao enviado.' });
-  } catch (e) { console.error(e); res.status(500).json({ error: 'Erro' }); }
-});
-
-app.post('/api/reset-password', async (req, res) => {
-  const { code, senha } = req.body;
-  if (!code || !senha) return res.status(400).json({ error: 'Campos obrigatorios' });
-  if (!/^(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/.test(String(senha)))
-    return res.status(400).json({ error: 'Senha fraca' });
-  try {
-    const entry = resetTokens.get(String(code));
-    if (!entry) return res.status(400).json({ error: 'Link invalido' });
-    if (Date.now() > entry.expires) { resetTokens.delete(String(code)); return res.status(400).json({ error: 'Link expirado' }); }
-    const user = await findUserByEmail(entry.email);
-    if (!user) return res.status(400).json({ error: 'Link invalido' });
-    const hash = await bcrypt.hash(senha, 10);
-    await updateUserRecord(user.__id, { ...user, senhahash: hash });
-    resetTokens.delete(String(code));
-    res.json({ message: 'Senha redefinida' });
-  } catch (e) { console.error(e); res.status(500).json({ error: 'Erro' }); }
-});
+// Rota de API inexistente: responde em vez de deixar a requisição pendurada
+app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontrada' }));

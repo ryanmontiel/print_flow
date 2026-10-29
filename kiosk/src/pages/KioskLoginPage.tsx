@@ -13,7 +13,7 @@ export default function KioskLoginPage() {
   useEffect(() => { apiHealthCheck().catch(() => {}) }, [])
 
   useEffect(() => {
-    if (localStorage.getItem('pf-kiosk-credentials')) {
+    if (sessionStorage.getItem('pf-kiosk-token')) {
       navigate('/print', { replace: true })
     }
   }, [navigate])
@@ -25,8 +25,8 @@ export default function KioskLoginPage() {
     setLoading(true)
     try {
       const res = await apiLogin(email, senha)
-      localStorage.setItem('pf-kiosk-credentials', JSON.stringify({ email, senha }))
-      localStorage.setItem('pf-kiosk-name', res.displayName)
+      sessionStorage.setItem('pf-kiosk-token', res.token)
+      sessionStorage.setItem('pf-kiosk-name', res.displayName)
       navigate('/print', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao fazer login')

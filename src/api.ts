@@ -7,6 +7,25 @@ type ApiOptions = {
   params?: Record<string, string>
 }
 
+export const TOKEN_KEY = 'printflow-token'
+
+export function getToken(): string | null {
+  return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY)
+}
+
+export function setToken(token: string, remember: boolean) {
+  clearToken()
+  ;(remember ? localStorage : sessionStorage).setItem(TOKEN_KEY, token)
+}
+
+export function clearToken() {
+  for (const storage of [localStorage, sessionStorage]) {
+    storage.removeItem(TOKEN_KEY)
+    // Versões antigas guardavam a senha em texto puro
+    storage.removeItem('userCredentials')
+  }
+}
+
 async function request<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
   const { method = 'GET', body, params } = options
   let url = `${API}${endpoint}`
@@ -18,9 +37,13 @@ async function request<T>(endpoint: string, options: ApiOptions = {}): Promise<T
   const timeoutId = setTimeout(() => controller.abort(), 60000)
   let res: Response
   try {
+    const token = getToken()
+    const headers: Record<string, string> = {}
+    if (body) headers['Content-Type'] = 'application/json'
+    if (token) headers.Authorization = `Bearer ${token}`
     res = await fetch(url, {
       method,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      headers,
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     })
@@ -31,20 +54,21 @@ async function request<T>(endpoint: string, options: ApiOptions = {}): Promise<T
   }
   if (!res.ok) {
     let msg = `Erro ${res.status}`
+    let code: string | undefined
     try {
       const parsed = await res.json()
       msg = parsed.error || msg
+      code = parsed.code
     } catch {}
+    if (code === 'SESSION_EXPIRED') {
+      clearToken()
+      localStorage.removeItem('printflow-user')
+      sessionStorage.removeItem('printflow-user')
+      if (!location.pathname.startsWith('/login')) location.assign('/login')
+    }
     throw new Error(msg)
   }
   return res.json()
-}
-
-function getCredentials() {
-  const raw = sessionStorage.getItem('userCredentials') || localStorage.getItem('userCredentials')
-  if (!raw) throw new Error('Credenciais ausentes. Faça login novamente.')
-  const { email, senha } = JSON.parse(raw)
-  return { email, senha }
 }
 
 export type StoredDocument = {
@@ -129,14 +153,14 @@ export const formatBRL = (value: number) =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 // Auth
-export const apiLogin = (email: string, senha: string) =>
-  request<{ message: string; displayName: string; printColor: string; printDuplex: string }>('/api/login', {
+export const apiLogin = (email: string, senha: string, remember = false) =>
+  request<{ message: string; token: string; email: string; displayName: string; printColor: string; printDuplex: string }>('/api/login', {
     method: 'POST',
-    body: { email, senha },
+    body: { email, senha, remember },
   })
 
 export const apiRegister = (email: string, nome: string, senha: string) =>
-  request<{ message: string }>('/api/register', {
+  request<{ message: string; emailSent?: boolean }>('/api/register', {
     method: 'POST',
     body: { email, nome, senha },
   })
@@ -177,16 +201,14 @@ export const formatBytes = (bytes: number) => {
 
 // Documents
 export const apiGetDocuments = () => {
-  const { email, senha } = getCredentials()
   return request<{ documents: StoredDocument[]; usedBytes: number; limitBytes: number }>('/api/documents', {
     method: 'POST',
-    body: { email, senha },
+    body: {},
   })
 }
 
 // Envia o arquivo direto para o R2 via URL pré-assinada (contorna o limite de 4.5MB da Vercel)
 export const apiUploadFile = async (file: File) => {
-  const { email, senha } = getCredentials()
 
   if (file.size > PER_FILE_LIMIT_BYTES) {
     throw new Error(`Arquivo muito grande. O limite é ${PER_FILE_LIMIT_BYTES / (1024 * 1024)} MB por arquivo.`)
@@ -195,8 +217,6 @@ export const apiUploadFile = async (file: File) => {
   const presign = await request<{ uploadUrl: string; url: string; key: string }>('/api/upload/presign', {
     method: 'POST',
     body: {
-      email,
-      senha,
       filename: file.name,
       contentType: file.type || 'application/octet-stream',
       size: file.size,
@@ -226,126 +246,88 @@ export const apiUploadFile = async (file: File) => {
 }
 
 export const apiAddDocument = (documentName: string, uploadedFile: StoredDocument) => {
-  const { email, senha } = getCredentials()
   return request<{ message: string; document: StoredDocument }>('/api/add-document', {
     method: 'POST',
-    body: { email, senha, documentName, ...uploadedFile },
+    body: { documentName, ...uploadedFile },
   })
 }
 
 export const apiDeleteDocument = async (documentId: string) => {
-  const { email, senha } = getCredentials()
   await request<{ message: string }>('/api/delete-document', {
     method: 'POST',
-    body: { email, senha, documentId },
+    body: { documentId },
   })
 }
 
 // Credits
 export const apiGetCredits = () => {
-  const { email, senha } = getCredentials()
   return request<{ credits: number; transactions: Transaction[] }>('/api/credits', {
-    params: { email, senha },
-  })
-}
-
-export const apiAddCredits = (amount: number, description?: string) => {
-  const { email, senha } = getCredentials()
-  return request<{ credits: number; transactions: Transaction[] }>('/api/credits/add', {
-    method: 'POST',
-    body: { email, senha, amount, description },
-  })
-}
-
-// Print
-export const apiPrint = (documentId: string, documentName: string, pages: number, cost: number, color: 'bw' | 'color' = 'bw', duplex: 'single' | 'duplex' = 'single') => {
-  const { email, senha } = getCredentials()
-  return request<{ message: string; printRecord: PrintRecord; credits: number }>('/api/print', {
-    method: 'POST',
-    body: { email, senha, documentId, documentName, pages, cost, color, duplex },
   })
 }
 
 export const apiGetPrintHistory = () => {
-  const { email, senha } = getCredentials()
   return request<{ printHistory: PrintRecord[] }>('/api/print-history', {
-    params: { email, senha },
   })
 }
 
 // Share
 export const apiShareDocument = (targetEmail: string, documentId: string, documentName: string, message?: string) => {
-  const { email, senha } = getCredentials()
   return request<{ message: string }>('/api/share-document', {
     method: 'POST',
-    body: { email, senha, targetEmail, documentId, documentName, message },
+    body: { targetEmail, documentId, documentName, message },
   })
 }
 
 export const apiHandleShare = (notificationId: string, action: 'accepted' | 'rejected') => {
-  const { email, senha } = getCredentials()
   return request<{ message: string }>('/api/handle-share', {
     method: 'POST',
-    body: { email, senha, notificationId, action },
+    body: { notificationId, action },
   })
 }
 
 // InfinitePay
 export const apiCreatePaymentLink = (amount: number, redirectUrl: string) => {
-  const { email, senha } = getCredentials()
   return request<{ url: string; order_nsu: string }>('/api/create-payment-link', {
     method: 'POST',
-    body: { email, senha, amount, redirect_url: redirectUrl },
+    body: { amount, redirect_url: redirectUrl },
   })
 }
 
 export const apiCheckPayment = (order_nsu: string, slug?: string, transaction_nsu?: string) => {
-  const { email, senha } = getCredentials()
   return request<{ paid: boolean; amount?: number }>('/api/check-payment', {
     method: 'POST',
-    body: { email, senha, order_nsu, slug, transaction_nsu },
+    body: { order_nsu, slug, transaction_nsu },
   })
 }
 
 export const apiReprocessPayment = (order_nsu: string) => {
-  const { email, senha } = getCredentials()
   return request<{ paid: boolean; amount?: number; message: string }>('/api/reprocess-payment', {
     method: 'POST',
-    body: { email, senha, order_nsu },
+    body: { order_nsu },
   })
 }
 
 export const apiGetPrintPreferences = () => {
-  const { email, senha } = getCredentials()
   return request<{ printColor: string; printDuplex: string }>('/api/user/print-preferences', {
-    params: { email, senha },
   })
 }
 
-export const apiDebugAddCredits = (amount: number, description?: string) => {
-  const { email, senha } = getCredentials()
-  return request<{ success: boolean; newCredits: string; transactions: any[] }>('/api/debug/add-credits', {
+export const apiSavePrintPreferences = (printColor: 'color' | 'bw', printDuplex: 'single' | 'duplex') =>
+  request<{ message: string }>('/api/user/print-preferences', {
     method: 'POST',
-    body: { email, senha, amount, description },
+    body: { printColor, printDuplex },
   })
-}
-
-export const apiDebugUser = () => {
-  const { email, senha } = getCredentials()
-  return request<{ __id: number; email: string; creditos: string; transacoes: any[]; pagamentospendentes: any }>('/api/debug/user', {
-    method: 'POST',
-    body: { email, senha },
-  })
-}
 
 // Notifications
 export const apiGetNotifications = () => {
-  const { email, senha } = getCredentials()
   return request<{ notifications: Notification[] }>('/api/notifications', {
-    params: { email, senha },
   })
 }
 
 // Users list for autocomplete
-export const apiGetUsers = () =>
-  request<{ users: { email: string; nome: string }[] }>('/api/users')
+export const apiSearchUsers = (q: string) => {
+  return request<{ users: { email: string; nome: string }[] }>('/api/users/search', {
+    method: 'POST',
+    body: { q },
+  })
+}

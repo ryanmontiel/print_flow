@@ -17,9 +17,13 @@ async function request<T>(endpoint: string, options: ApiOptions = {}): Promise<T
   const timeoutId = setTimeout(() => controller.abort(), 60000)
   let res: Response
   try {
+    const token = getToken()
+    const headers: Record<string, string> = {}
+    if (body) headers['Content-Type'] = 'application/json'
+    if (token) headers.Authorization = `Bearer ${token}`
     res = await fetch(url, {
       method,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      headers,
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     })
@@ -30,20 +34,25 @@ async function request<T>(endpoint: string, options: ApiOptions = {}): Promise<T
   }
   if (!res.ok) {
     let msg = `Erro ${res.status}`
+    let code: string | undefined
     try {
       const parsed = await res.json()
       msg = parsed.error || msg
+      code = parsed.code
     } catch {}
+    if (code === 'SESSION_EXPIRED') {
+      window.__kioskLogout?.()
+      if (location.pathname !== '/') location.assign('/')
+    }
     throw new Error(msg)
   }
   return res.json()
 }
 
-function getCredentials() {
-  let raw
-  try { raw = localStorage.getItem('pf-kiosk-credentials') } catch {}
-  if (!raw) throw new Error('Credenciais ausentes. Faça login novamente.')
-  return JSON.parse(raw) as { email: string; senha: string }
+export const TOKEN_KEY = 'pf-kiosk-token'
+
+export function getToken(): string | null {
+  try { return sessionStorage.getItem(TOKEN_KEY) } catch { return null }
 }
 
 export type StoredDocument = {
@@ -104,38 +113,20 @@ declare global {
 }
 
 export const apiLogin = (email: string, senha: string) =>
-  request<{ message: string; displayName: string }>('/api/login', {
+  request<{ message: string; token: string; displayName: string }>('/api/login', {
     method: 'POST',
-    body: { email, senha },
+    body: { email, senha, client: 'kiosk' },
   })
 
 export const apiGetDocuments = () => {
-  const { email, senha } = getCredentials()
   return request<{ documents: StoredDocument[] }>('/api/documents', {
     method: 'POST',
-    body: { email, senha },
+    body: {},
   })
 }
 
 export const apiGetCredits = () => {
-  const { email, senha } = getCredentials()
   return request<{ credits: number; transactions: unknown[] }>('/api/credits', {
-    params: { email, senha },
-  })
-}
-
-export const apiPrint = (documentId: string, documentName: string, pages: number, cost: number, color: 'bw' | 'color' = 'bw', duplex: 'single' | 'duplex' = 'single') => {
-  const { email, senha } = getCredentials()
-  return request<{ message: string; printRecord: { id: string }; credits: number }>('/api/print', {
-    method: 'POST',
-    body: { email, senha, documentId, documentName, pages, cost, color, duplex },
-  })
-}
-
-export const apiCupsPrint = (fileUrl: string, color: 'bw' | 'color' = 'bw', duplex: 'single' | 'duplex' = 'single') => {
-  return request<{ message: string; jobId?: string }>('/api/cups-print', {
-    method: 'POST',
-    body: { fileUrl, color, duplex },
   })
 }
 
@@ -146,16 +137,15 @@ export const apiPrintStart = (params: {
   documentId: string
   documentName: string
   pages: number
-  cost: number
-  email: string
-  senha: string
+  copies: number
+  pageRanges?: string
 }) => request<{ message: string; jobId: string }>('/api/print/start', {
   method: 'POST',
   body: params,
 })
 
 export const apiPrintStatus = (jobId: string) =>
-  request<{ status: 'pending' | 'printing' | 'completed'; jobId: string }>(`/api/print/status/${jobId}`)
+  request<{ status: 'printing' | 'completed' | 'error'; jobId: string; error?: string }>(`/api/print/status/${jobId}`)
 
 export const apiPrintComplete = (jobId: string) =>
   request<{ message: string; credits: number }>('/api/print/complete', {
@@ -164,17 +154,14 @@ export const apiPrintComplete = (jobId: string) =>
   })
 
 export const apiGetPrintPreferences = () => {
-  const { email, senha } = getCredentials()
   return request<{ printColor: string; printDuplex: string }>('/api/user/print-preferences', {
-    params: { email, senha },
   })
 }
 
 export const apiHandleShare = (notificationId: string, action: 'accepted') => {
-  const { email, senha } = getCredentials()
   return request<{ message: string }>('/api/handle-share', {
     method: 'POST',
-    body: { email, senha, notificationId, action },
+    body: { notificationId, action },
   })
 }
 
@@ -194,8 +181,6 @@ export const apiHealthCheck = () =>
   request<{ status: string }>('/api/health')
 
 export const apiGetNotifications = () => {
-  const { email, senha } = getCredentials()
   return request<{ notifications: Notification[] }>('/api/notifications', {
-    params: { email, senha },
   })
 }

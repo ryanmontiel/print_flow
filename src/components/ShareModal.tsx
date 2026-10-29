@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Send, User } from 'lucide-react'
-import { apiGetUsers, truncateTitle } from '../api'
+import { apiSearchUsers, truncateTitle } from '../api'
 
 type Props = {
   isOpen: boolean
@@ -16,8 +16,8 @@ export default function ShareModal({ isOpen, onClose, documentName, onShare }: P
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
-  const [users, setUsers] = useState<{ email: string; nome: string }[]>([])
   const [filtered, setFiltered] = useState<{ email: string; nome: string }[]>([])
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!isOpen) return
@@ -26,22 +26,23 @@ export default function ShareModal({ isOpen, onClose, documentName, onShare }: P
     setError('')
     setSuccess(false)
     setFiltered([])
-    apiGetUsers()
-      .then(res => setUsers(res.users || []))
-      .catch(() => {})
   }, [isOpen])
+
+  useEffect(() => () => { if (searchTimer.current) clearTimeout(searchTimer.current) }, [])
 
   const handleEmailChange = (value: string) => {
     setTargetEmail(value)
-    if (value.length >= 2) {
-      const matches = users.filter(u =>
-        u.email.toLowerCase().includes(value.toLowerCase()) ||
-        u.nome.toLowerCase().includes(value.toLowerCase())
-      ).slice(0, 5)
-      setFiltered(matches)
-    } else {
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    if (value.trim().length < 3) {
       setFiltered([])
+      return
     }
+    // Busca no servidor (a lista completa de alunos não é mais exposta)
+    searchTimer.current = setTimeout(() => {
+      apiSearchUsers(value.trim())
+        .then(res => setFiltered(res.users || []))
+        .catch(() => setFiltered([]))
+    }, 250)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

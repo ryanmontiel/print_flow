@@ -4,6 +4,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useState, useEffect } from 'react'
 import { LogOut, Sun, Moon, Printer, FileText } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { apiSavePrintPreferences } from '../api'
 
 export default function ProfilePage() {
   const { user, logout } = useAuth()
@@ -26,13 +27,7 @@ export default function ProfilePage() {
     const value = e.target.value as 'color' | 'bw'
     setPrintColor(value)
     try {
-      const { email, senha } = JSON.parse(localStorage.getItem('userCredentials') || '{}')
-      if (!email || !senha) return
-      await fetch('/api/user/print-preferences', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, senha, printColor: value, printDuplex }),
-      })
+      await apiSavePrintPreferences(value, printDuplex)
     } catch (err) {
       console.error('Save color preference error:', err)
     }
@@ -42,13 +37,7 @@ export default function ProfilePage() {
     const value = e.target.value as 'single' | 'duplex'
     setPrintDuplex(value)
     try {
-      const { email, senha } = JSON.parse(localStorage.getItem('userCredentials') || '{}')
-      if (!email || !senha) return
-      await fetch('/api/user/print-preferences', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, senha, printColor, printDuplex: value }),
-      })
+      await apiSavePrintPreferences(printColor, value)
     } catch (err) {
       console.error('Save duplex preference error:', err)
     }

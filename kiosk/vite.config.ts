@@ -6,8 +6,8 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      '/api': 'https://print-flow-frjf.onrender.com',
-      '/uploads': 'https://print-flow-frjf.onrender.com',
+      '/api': 'https://tcc-printflow.vercel.app',
+      '/uploads': 'https://tcc-printflow.vercel.app',
     },
   },
 })

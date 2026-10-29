@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import { getToken, clearToken } from '../api'
 
 type User = {
   email: string
@@ -27,7 +28,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const stored = localStorage.getItem('printflow-user') || sessionStorage.getItem('printflow-user')
-    if (stored) {
+    // Sessão de versão antiga (sem token): precisa entrar de novo
+    if (stored && !getToken()) {
+      localStorage.removeItem('printflow-user')
+      sessionStorage.removeItem('printflow-user')
+      clearToken()
+    } else if (stored) {
       try {
         const parsed = JSON.parse(stored)
         setUser(parsed)
@@ -45,9 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     localStorage.removeItem('printflow-user')
-    localStorage.removeItem('userCredentials')
     sessionStorage.removeItem('printflow-user')
-    sessionStorage.removeItem('userCredentials')
+    clearToken()
     setUser(null)
   }
 

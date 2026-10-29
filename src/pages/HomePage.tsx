@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { FileText, CreditCard, Printer, ArrowRight, TrendingUp, TrendingDown, Send, X } from 'lucide-react'
-import { apiGetDocuments, apiGetCredits, apiGetPrintHistory, apiGetUsers, apiShareDocument, isOwnDocument, documentDisplayName, truncateTitle, formatBRL, type StoredDocument, type Transaction } from '../api'
+import { apiGetDocuments, apiGetCredits, apiGetPrintHistory, apiSearchUsers, apiShareDocument, isOwnDocument, documentDisplayName, truncateTitle, formatBRL, type StoredDocument, type Transaction } from '../api'
 
 export default function HomePage() {
   const navigate = useNavigate()
@@ -14,7 +14,7 @@ export default function HomePage() {
   const [error, setError] = useState('')
   const [shareOpen, setShareOpen] = useState(false)
   const [shareDocs, setShareDocs] = useState<StoredDocument[]>([])
-  const [shareUsers, setShareUsers] = useState<{ email: string; nome: string }[]>([])
+  const shareSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [shareSelectedDoc, setShareSelectedDoc] = useState('')
   const [shareEmail, setShareEmail] = useState('')
   const [shareEmailFiltered, setShareEmailFiltered] = useState<{ email: string; nome: string }[]>([])
@@ -60,23 +60,23 @@ export default function HomePage() {
     setShareEmail('')
     setShareMessage('')
     try {
-      const [docsRes, usersRes] = await Promise.allSettled([apiGetDocuments(), apiGetUsers()])
-      if (docsRes.status === 'fulfilled') setShareDocs((docsRes.value.documents || []).filter(isOwnDocument))
-      if (usersRes.status === 'fulfilled') setShareUsers(usersRes.value.users || [])
+      const docsRes = await apiGetDocuments()
+      setShareDocs((docsRes.documents || []).filter(isOwnDocument))
     } catch {}
   }
 
   const handleShareEmailChange = (value: string) => {
     setShareEmail(value)
-    if (value.length >= 2) {
-      const filtered = shareUsers.filter(u =>
-        u.email.toLowerCase().includes(value.toLowerCase()) ||
-        u.nome.toLowerCase().includes(value.toLowerCase())
-      ).slice(0, 5)
-      setShareEmailFiltered(filtered)
-    } else {
+    if (shareSearchTimer.current) clearTimeout(shareSearchTimer.current)
+    if (value.trim().length < 3) {
       setShareEmailFiltered([])
+      return
     }
+    shareSearchTimer.current = setTimeout(() => {
+      apiSearchUsers(value.trim())
+        .then(res => setShareEmailFiltered(res.users || []))
+        .catch(() => setShareEmailFiltered([]))
+    }, 250)
   }
 
   const handleShareSubmit = async (e: React.FormEvent) => {

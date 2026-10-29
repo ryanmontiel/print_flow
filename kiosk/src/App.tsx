@@ -13,8 +13,15 @@ export default function App() {
   )
 }
 
-// Global logout helper used by KioskPrintPage
-window.__kioskLogout = () => {
+// Versões antigas guardavam a senha no localStorage (sobrevivia ao fechar o app)
+try {
   localStorage.removeItem('pf-kiosk-credentials')
   localStorage.removeItem('pf-kiosk-name')
+} catch {}
+
+// Global logout helper used by KioskPrintPage
+window.__kioskLogout = () => {
+  sessionStorage.removeItem('pf-kiosk-token')
+  sessionStorage.removeItem('pf-kiosk-credentials')
+  sessionStorage.removeItem('pf-kiosk-name')
 }

@@ -33,3 +33,8 @@ kiosk/cache/
 *.sw?
 .vercel
 .env*
+
+# Dados locais de pagamentos (contém matrículas)
+data/
+# Arquivo de segredos sem o ponto (não versionar)
+/env

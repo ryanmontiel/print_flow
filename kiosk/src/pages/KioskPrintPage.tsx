@@ -9,6 +9,23 @@ import PdfPreview from '../components/PdfPreview'
 import ImagePreview from '../components/ImagePreview'
 import { apiGetDocuments, apiGetCredits, apiPrintStart, apiPrintStatus, apiPrintComplete, apiGetPrintPreferences, getPrintPrice, getPrintCost, printConfigLabel, formatBRL, documentDisplayName, truncateTitle, type StoredDocument, type PrintConfig } from '../api'
 
+// Encerra a sessão sozinho se o aluno se afastar do kiosk
+const IDLE_LOGOUT_MS = 2 * 60 * 1000
+const IDLE_LOGOUT_DONE_MS = 30 * 1000
+const IDLE_WARNING_MS = 20 * 1000
+
+// {1,2,3,5} -> "1-3,5" (formato do page-ranges do CUPS)
+function toPageRanges(pages: Set<number>): string {
+  const sorted = [...pages].sort((a, b) => a - b)
+  const ranges: string[] = []
+  for (let i = 0; i < sorted.length; i++) {
+    const start = sorted[i]
+    while (i + 1 < sorted.length && sorted[i + 1] === sorted[i] + 1) i++
+    ranges.push(start === sorted[i] ? `${start}` : `${start}-${sorted[i]}`)
+  }
+  return ranges.join(',')
+}
+
 type Step = 'select' | 'simulate' | 'printing' | 'done' | 'error'
 
 export default function KioskPrintPage() {
@@ -46,10 +63,10 @@ export default function KioskPrintPage() {
   const canDuplex = selectedPageCount >= 2
   const canPrint = credits >= totalCost && totalPrintedPages > 0
 
-  const userName = localStorage.getItem('pf-kiosk-name') || ''
+  const userName = sessionStorage.getItem('pf-kiosk-name') || ''
 
   useEffect(() => {
-    if (!localStorage.getItem('pf-kiosk-credentials')) {
+    if (!sessionStorage.getItem('pf-kiosk-token')) {
       navigate('/', { replace: true })
       return
     }
@@ -124,9 +141,8 @@ export default function KioskPrintPage() {
         documentId: selected.id,
         documentName: selected.name || selected.originalname || 'Documento',
         pages: totalPrintedPages,
-        cost: totalCost,
-        email: localStorage.getItem('pf-kiosk-credentials') ? JSON.parse(localStorage.getItem('pf-kiosk-credentials')!).email : '',
-        senha: localStorage.getItem('pf-kiosk-credentials') ? JSON.parse(localStorage.getItem('pf-kiosk-credentials')!).senha : '',
+        copies,
+        pageRanges: isPdf ? toPageRanges(pdfSelectedPages) : undefined,
       })
       setPrintJobId(res.jobId)
       startPolling(res.jobId)
@@ -146,6 +162,8 @@ export default function KioskPrintPage() {
         if (res.status === 'completed') {
           clearInterval(pollIntervalRef.current!)
           await completePrint(jobId)
+        } else if (res.status === 'error') {
+          handlePrintError(res.error || 'Falha na impressão')
         }
       } catch (err) {
         console.error('Polling error:', err)
@@ -190,6 +208,29 @@ export default function KioskPrintPage() {
     navigate('/', { replace: true })
   }
 
+  const [idleSecondsLeft, setIdleSecondsLeft] = useState<number | null>(null)
+  const logoutRef = useRef(handleLogout)
+  logoutRef.current = handleLogout
+
+  useEffect(() => {
+    // Não desloga no meio de uma impressão
+    if (step === 'printing') { setIdleSecondsLeft(null); return }
+    const limit = step === 'done' ? IDLE_LOGOUT_DONE_MS : IDLE_LOGOUT_MS
+    let lastActivity = Date.now()
+    const reset = () => { lastActivity = Date.now(); setIdleSecondsLeft(null) }
+    const events = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const
+    events.forEach(e => window.addEventListener(e, reset, { passive: true }))
+    const timer = setInterval(() => {
+      const left = limit - (Date.now() - lastActivity)
+      if (left <= 0) logoutRef.current()
+      else setIdleSecondsLeft(left <= IDLE_WARNING_MS ? Math.ceil(left / 1000) : null)
+    }, 1000)
+    return () => {
+      events.forEach(e => window.removeEventListener(e, reset))
+      clearInterval(timer)
+    }
+  }, [step])
+
   const handleBack = () => {
     setSelected(null)
     setStep('select')
@@ -215,6 +256,12 @@ export default function KioskPrintPage() {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {idleSecondsLeft !== null && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white px-6 py-4 rounded-2xl shadow-2xl text-center">
+          <p className="font-semibold">Sessão será encerrada em {idleSecondsLeft}s por inatividade</p>
+          <p className="text-sm text-gray-300">Toque na tela para continuar</p>
+        </div>
+      )}
       {/* Top bar */}
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">

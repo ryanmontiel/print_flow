@@ -68,6 +68,12 @@ pub fn run() {
         .map(strip_verbatim)
         .unwrap_or_else(|_| std::env::temp_dir().join("printflow-kiosk"));
       let _ = std::fs::create_dir_all(&cache_dir);
+      // Config opcional do kiosk em ~/.config/com.printflow.kiosk/.env
+      let env_file = app
+        .path()
+        .app_config_dir()
+        .map(|d| strip_verbatim(d).join(".env"))
+        .unwrap_or_else(|_| resource_dir.join(".env"));
 
       let port = std::env::var("KIOSK_PORT")
         .ok()
@@ -88,6 +94,7 @@ pub fn run() {
           .arg(&script)
           .current_dir(&resource_dir)
           .env("KIOSK_CACHE_DIR", &cache_dir)
+          .env("KIOSK_ENV_FILE", &env_file)
           .stdout(std::process::Stdio::inherit())
           .stderr(std::process::Stdio::inherit())
           .spawn()
