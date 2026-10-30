@@ -10,7 +10,12 @@
     "preview": "vite preview",
     "dev:kiosk": "concurrently -n kiosk,back -c cyan,yellow \"cd kiosk && vite\" \"cd kiosk && node server-kiosk.js\"",
     "build:kiosk": "cd kiosk && npm run build",
-    "start:kiosk": "cd kiosk && node server-kiosk.js"
+    "start:kiosk": "cd kiosk && node server-kiosk.js",
+    "test": "node --test tests/backend/*.test.mjs",
+    "test:kiosk": "node --test --test-concurrency=1 tests/kiosk/*.test.mjs",
+    "test:concorrencia": "PF_SHEET_LATENCY=real node tests/concorrencia/concorrencia.mjs",
+    "test:carga": "PF_SHEET_LATENCY=real node tests/carga/carga.mjs",
+    "test:producao": "node tests/producao/producao.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1152.0",
@@ -33,6 +38,7 @@
     "autoprefixer": "^10.5.0",
     "concurrently": "^9.2.1",
     "postcss": "^8.5.14",
+    "puppeteer-core": "^24.43.1",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.2.2",
     "vite": "^5.0.8"

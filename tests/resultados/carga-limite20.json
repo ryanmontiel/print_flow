@@ -1,0 +1,130 @@
+{
+  "data": "2026-10-30T20:13:24.874Z",
+  "latenciaBanco": "real",
+  "limiteBanco": "20",
+  "criterios": {
+    "navegacao": 2000,
+    "login": 3000,
+    "erros": 0.01
+  },
+  "resultados": [
+    {
+      "cenario": "pico",
+      "descricao": "200 usuários navegando (pico de uso)",
+      "usuarios": 200,
+      "duracaoS": 98,
+      "requisicoes": 2711,
+      "reqPorSegundo": 27.6,
+      "taxaErro": "0.00%",
+      "p95NavegacaoMs": 4219,
+      "p95LoginMs": 8761,
+      "cpuMaxPct": 99,
+      "cpuMediaPct": 12,
+      "memoriaMaxMB": 117,
+      "consultasAoBanco": 2911,
+      "maxConsultasSimultaneasAoBanco": 20,
+      "aprovado": false,
+      "rotas": {
+        "/api/login": {
+          "requisicoes": 200,
+          "erros": 0,
+          "p50": 4427,
+          "p95": 8761,
+          "p99": 13509,
+          "max": 13745
+        },
+        "/api/credits": {
+          "requisicoes": 597,
+          "erros": 0,
+          "p50": 750,
+          "p95": 4219,
+          "p99": 6666,
+          "max": 9584
+        },
+        "/api/notifications": {
+          "requisicoes": 656,
+          "erros": 0,
+          "p50": 711,
+          "p95": 3725,
+          "p99": 6042,
+          "max": 6716
+        },
+        "/api/print-history": {
+          "requisicoes": 628,
+          "erros": 0,
+          "p50": 750,
+          "p95": 4176,
+          "p99": 6369,
+          "max": 9435
+        },
+        "/api/documents": {
+          "requisicoes": 630,
+          "erros": 0,
+          "p50": 734,
+          "p95": 3667,
+          "p99": 6324,
+          "max": 9599
+        }
+      }
+    },
+    {
+      "cenario": "estresse",
+      "descricao": "500 usuários navegando sem parar (todos ao mesmo tempo)",
+      "usuarios": 500,
+      "duracaoS": 104,
+      "requisicoes": 2599,
+      "reqPorSegundo": 24.9,
+      "taxaErro": "7.62%",
+      "p95NavegacaoMs": 17309,
+      "p95LoginMs": 30001,
+      "cpuMaxPct": 101,
+      "cpuMediaPct": 24,
+      "memoriaMaxMB": 168,
+      "consultasAoBanco": 3099,
+      "maxConsultasSimultaneasAoBanco": 20,
+      "aprovado": false,
+      "rotas": {
+        "/api/login": {
+          "requisicoes": 500,
+          "erros": 198,
+          "p50": 27165,
+          "p95": 30001,
+          "p99": 30001,
+          "max": 30002
+        },
+        "/api/documents": {
+          "requisicoes": 483,
+          "erros": 0,
+          "p50": 6782,
+          "p95": 17147,
+          "p99": 18523,
+          "max": 22827
+        },
+        "/api/credits": {
+          "requisicoes": 519,
+          "erros": 0,
+          "p50": 6778,
+          "p95": 17082,
+          "p99": 19012,
+          "max": 22873
+        },
+        "/api/print-history": {
+          "requisicoes": 530,
+          "erros": 0,
+          "p50": 6891,
+          "p95": 16860,
+          "p99": 18593,
+          "max": 19211
+        },
+        "/api/notifications": {
+          "requisicoes": 567,
+          "erros": 0,
+          "p50": 6870,
+          "p95": 17309,
+          "p99": 18833,
+          "max": 22731
+        }
+      }
+    }
+  ]
+}

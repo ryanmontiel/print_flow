@@ -1,0 +1,48 @@
+✔ cadastro aceita só email institucional
+✔ cadastro exige senha forte
+✔ cadastro envia código de 6 dígitos e a verificação libera o login
+✔ email já cadastrado é recusado
+✔ tabela de preços: P&B R$0,50/0,35 e colorido R$0,75/0,60 por página
+✔ valor enviado pelo cliente é ignorado: o servidor calcula
+✔ débito registra histórico e extrato
+✔ sem saldo: impressão recusada (HTTP 402) e saldo não fica negativo
+✔ frente e verso exige pelo menos 2 páginas
+✔ número de páginas inválido é recusado (0, fração, negativo)
+✔ reenvio do mesmo débito (clientRef) não cobra duas vezes
+✔ Pix: crédito só depois que a InfinitePay confirma, e uma única vez
+✔ Pix: valores fora do intervalo R$1–500 são recusados
+✔ upload: registra documento com o tamanho real do arquivo
+✔ upload: tipo de arquivo não permitido é recusado
+✔ upload: arquivo acima de 10 MB é recusado já no pedido
+✔ upload: quem mente o tamanho e envia arquivo maior tem o arquivo recusado e apagado
+✔ upload: cota de 50 MB por aluno
+✔ excluir documento próprio apaga o arquivo do armazenamento
+✔ compartilhar: destinatário recebe o documento e uma notificação pendente
+✔ compartilhar: recusar remove o documento do destinatário
+✔ compartilhar: documento recebido não conta na cota e excluir não apaga o original
+✔ busca de usuários para compartilhar: só verificados, mínimo 3 letras, sem o próprio
+✔ preferências de impressão são salvas e devolvidas no login
+✔ recuperação de senha: link funciona uma vez e derruba sessões antigas
+✔ as 17 rotas protegidas recusam acesso sem token (401)
+✔ rotas protegidas recusam token adulterado, expirado ou de outro sistema
+✔ clientes antigos (senha no corpo ou na URL) não autenticam mais
+✔ rotas que davam créditos grátis ou listavam alunos não existem mais (404)
+✔ login com o hash armazenado no lugar da senha é recusado
+✔ nenhuma resposta da API expõe hash de senha ou código de verificação
+✔ não dá para descobrir quem é cadastrado (login e recuperação respondem igual)
+✔ URL de documento com comando de shell ou de outro domínio é recusada
+✔ aluno não consegue registrar nem apagar arquivo de outro aluno
+✔ aluno não consegue agir sobre notificação de outro aluno
+✔ webhook de pagamento falso não gera crédito
+✔ requisições malformadas são recusadas sem derrubar o servidor
+✔ rota inexistente responde 404 rápido (não fica pendurada)
+⚠ força bruta no login: bloquear após várias senhas erradas # não há limite de tentativas de login
+⚠ força bruta no código de verificação: bloquear após várias tentativas # não há limite de tentativas no código de 6 dígitos
+ℹ tests 40
+ℹ pass 38
+ℹ fail 0
+ℹ todo 2
+ℹ duration_ms 827.879591
+✖ failing tests:
+⚠ força bruta no login: bloquear após várias senhas erradas # não há limite de tentativas de login
+⚠ força bruta no código de verificação: bloquear após várias tentativas # não há limite de tentativas no código de 6 dígitos

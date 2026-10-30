@@ -1,0 +1,30 @@
+✔ impressão simples: imprime e debita R$0,50 por página P&B
+✔ cópias e páginas escolhidas chegam ao CUPS e são cobradas certo
+✔ fila: segundo documento enviado enquanto o primeiro imprime — os dois saem, na ordem, cobrados uma vez cada
+✔ fila: saldo só dá para um — o segundo documento é recusado antes de imprimir
+✔ clique duplo com saldo para um só: apenas um trabalho é aceito
+✔ sem saldo: nada vai para a impressora
+✔ trabalho cancelado na impressora não é cobrado
+✔ impressora desligada: trabalho espera, não cobra; ao religar imprime e cobra uma vez
+✔ servidor principal fora do ar na hora do débito: kiosk tenta de novo e cobra uma vez
+✔ resposta do débito se perde na rede: nova tentativa não cobra duas vezes
+✔ URL de documento com comando de shell não executa nada no computador do kiosk
+✔ sem login (token ausente ou inválido) o kiosk não imprime
+✔ 10 impressões seguidas do mesmo aluno: todas saem e a soma cobrada bate
+⚠ kiosk reinicia no meio de uma impressão: o trabalho ainda deveria ser cobrado # trabalhos em andamento ficam só na memória do kiosk
+✔ login com senha errada mostra erro e não entra
+✔ login mostra o nome, o saldo e os documentos do aluno
+✔ prévia mantém a proporção: retrato em pé, paisagem deitado, inclusive ao alternar
+✔ sem saldo: aviso aparece e o botão Imprimir fica desabilitado
+✔ impressão pela tela: mostra andamento, conclui e atualiza o saldo
+✔ clique duplo no Imprimir gera só um trabalho
+✔ inatividade: avisa e encerra a sessão sozinho após 2 minutos
+✔ tocar na tela durante o aviso mantém a sessão
+✔ botão Sair apaga a sessão e não dá para voltar sem login
+ℹ tests 23
+ℹ pass 22
+ℹ fail 0
+ℹ todo 1
+ℹ duration_ms 145075.327158
+✖ failing tests:
+⚠ kiosk reinicia no meio de uma impressão: o trabalho ainda deveria ser cobrado # trabalhos em andamento ficam só na memória do kiosk

@@ -1,0 +1,109 @@
+{
+  "data": "2026-10-30T20:14:48.181Z",
+  "base": "https://tcc-printflow.vercel.app",
+  "disponibilidade": [
+    {
+      "rota": "/",
+      "status": 200,
+      "ms": 489
+    },
+    {
+      "rota": "/login",
+      "status": 200,
+      "ms": 164
+    },
+    {
+      "rota": "/api/health",
+      "status": 200,
+      "ms": 168
+    }
+  ],
+  "protecao": [
+    {
+      "rota": "GET /api/credits",
+      "esperado": 401,
+      "status": 401,
+      "ok": true
+    },
+    {
+      "rota": "POST /api/documents",
+      "esperado": 401,
+      "status": 401,
+      "ok": true
+    },
+    {
+      "rota": "POST /api/print",
+      "esperado": 401,
+      "status": 401,
+      "ok": true
+    },
+    {
+      "rota": "GET /api/notifications",
+      "esperado": 401,
+      "status": 401,
+      "ok": true
+    },
+    {
+      "rota": "POST /api/users/search",
+      "esperado": 401,
+      "status": 401,
+      "ok": true
+    },
+    {
+      "rota": "POST /api/create-payment-link",
+      "esperado": 401,
+      "status": 401,
+      "ok": true
+    },
+    {
+      "rota": "POST /api/credits/add",
+      "esperado": 404,
+      "status": 404,
+      "ok": true
+    },
+    {
+      "rota": "POST /api/debug/add-credits",
+      "esperado": 404,
+      "status": 404,
+      "ok": true
+    },
+    {
+      "rota": "GET /api/users",
+      "esperado": 404,
+      "status": 404,
+      "ok": true
+    }
+  ],
+  "cabecalhos": {
+    "HTTP redireciona para HTTPS": true,
+    "Strict-Transport-Security (HSTS)": "max-age=63072000; includeSubDomains; preload",
+    "X-Content-Type-Options": null,
+    "X-Frame-Options / frame-ancestors": null,
+    "Content-Security-Policy": null,
+    "Referrer-Policy": null
+  },
+  "carga": [
+    {
+      "nome": "Página do site (/)",
+      "conexoes": 20,
+      "segundos": 30,
+      "requisicoes": 13549,
+      "reqPorSegundo": 451.6,
+      "erros": 0,
+      "p50": 38,
+      "p95": 71,
+      "max": 3165
+    },
+    {
+      "nome": "API sem banco (/api/health)",
+      "conexoes": 20,
+      "segundos": 30,
+      "requisicoes": 3979,
+      "reqPorSegundo": 132.6,
+      "erros": 1359,
+      "p50": 163,
+      "p95": 233,
+      "max": 5275
+    }
+  ]
+}

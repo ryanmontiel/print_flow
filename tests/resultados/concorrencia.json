@@ -1,0 +1,36 @@
+{
+  "data": "2026-10-30T17:02:49.615122",
+  "latencia": "real",
+  "resultados": [
+    {
+      "cenario": "Mesmo aluno envia 2 documentos ao mesmo tempo (duas abas)",
+      "rodadas": 20,
+      "falhas": 12,
+      "taxa": "60%"
+    },
+    {
+      "cenario": "5 colegas compartilham com o mesmo aluno ao mesmo tempo",
+      "rodadas": 20,
+      "falhas": 20,
+      "taxa": "100%"
+    },
+    {
+      "cenario": "Pix confirmado: webhook e tela de créditos chegam juntos",
+      "rodadas": 20,
+      "falhas": 0,
+      "taxa": "0%"
+    },
+    {
+      "cenario": "Débito de impressão e crédito de Pix no mesmo instante",
+      "rodadas": 20,
+      "falhas": 12,
+      "taxa": "60%"
+    },
+    {
+      "cenario": "Kiosk reenvia o mesmo débito enquanto o primeiro ainda está em andamento",
+      "rodadas": 20,
+      "falhas": 0,
+      "taxa": "0%"
+    }
+  ]
+}
