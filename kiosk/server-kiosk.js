@@ -179,6 +179,40 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
+// Dono do token (só para agrupar os trabalhos do mesmo aluno; quem valida o token
+// é o servidor principal)
+const tokenOwner = (token) => {
+  try { return JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString()).e || token; } catch { return token; }
+};
+
+// Valor dos trabalhos do aluno que já estão na fila e ainda não foram debitados.
+// Sem isso, um segundo documento enviado durante a impressão do primeiro passava
+// na consulta de saldo e saía de graça quando o saldo só cobria um deles.
+const reservedFor = (owner) => {
+  let total = 0;
+  for (const job of printJobs.values()) {
+    if (job.owner === owner && (job.status === 'printing' || job.status === 'debiting')) total += job.cost || 0;
+  }
+  return total;
+};
+
+// Um pedido de impressão por vez para cada aluno (dois cliques seguidos não
+// passam juntos pela conferência de saldo)
+const startLocks = new Map();
+const withUserLock = async (key, fn) => {
+  const previous = startLocks.get(key) || Promise.resolve();
+  let release;
+  const current = previous.then(() => new Promise((r) => { release = r; }));
+  startLocks.set(key, current);
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (startLocks.get(key) === current) startLocks.delete(key);
+  }
+};
+
 // Start print job: confere saldo, envia ao CUPS e passa a acompanhar o job
 app.post('/api/print/start', async (req, res) => {
   const { fileUrl, color, duplex, documentId, documentName, pages, copies, pageRanges } = req.body;
@@ -193,64 +227,76 @@ app.post('/api/print/start', async (req, res) => {
   const printColor = color === 'color' ? 'color' : 'bw';
   const printDuplex = duplex === 'duplex' ? 'duplex' : 'single';
 
-  let tempFile;
-  try {
-    const quote = await postMain('/api/print/quote', { pages: totalPages, color: printColor, duplex: printDuplex }, token);
-    if (!quote.enough) return res.status(402).json({ error: 'Créditos insuficientes para esta impressão' });
+  const owner = tokenOwner(token);
+  await withUserLock(owner, async () => {
+    let tempFile;
+    try {
+      const quote = await postMain('/api/print/quote', { pages: totalPages, color: printColor, duplex: printDuplex }, token);
+      const reserved = reservedFor(owner);
+      if (!quote.enough || quote.credits - reserved < quote.cost) {
+        return res.status(402).json({
+          error: reserved > 0
+            ? 'Créditos insuficientes: o saldo já está reservado para o documento que está imprimindo'
+            : 'Créditos insuficientes para esta impressão',
+        });
+      }
 
-    const absoluteUrl = fileUrl.startsWith('http') ? fileUrl : `${MAIN_SERVER}${fileUrl}`;
-    const fileResponse = await fetchWithTimeout(absoluteUrl, {}, 60000);
-    if (!fileResponse.ok) throw new Error('Falha ao baixar o arquivo do servidor principal');
+      const absoluteUrl = fileUrl.startsWith('http') ? fileUrl : `${MAIN_SERVER}${fileUrl}`;
+      const fileResponse = await fetchWithTimeout(absoluteUrl, {}, 60000);
+      if (!fileResponse.ok) throw new Error('Falha ao baixar o arquivo do servidor principal');
 
-    const buffer = Buffer.from(await fileResponse.arrayBuffer());
-    // A extensão vem da URL (controlada pelo aluno): só aceita formatos simples
-    const urlExt = path.extname(new URL(absoluteUrl).pathname).toLowerCase();
-    const ext = /^\.[a-z0-9]{1,5}$/.test(urlExt) ? urlExt : '.pdf';
-    tempFile = path.join(os.tmpdir(), `pf-${Date.now()}${ext}`);
-    fs.writeFileSync(tempFile, buffer);
+      const buffer = Buffer.from(await fileResponse.arrayBuffer());
+      // A extensão vem da URL (controlada pelo aluno): só aceita formatos simples
+      const urlExt = path.extname(new URL(absoluteUrl).pathname).toLowerCase();
+      const ext = /^\.[a-z0-9]{1,5}$/.test(urlExt) ? urlExt : '.pdf';
+      tempFile = path.join(os.tmpdir(), `pf-${Date.now()}${ext}`);
+      fs.writeFileSync(tempFile, buffer);
 
-    const dest = CUPS_IPP_URL || CUPS_PRINTER;
-    const colorModel = printColor === 'color' ? 'RGB' : 'Gray';
-    const sides = printDuplex === 'duplex' ? 'two-sided-long-edge' : 'one-sided';
-    // execFile: argumentos vão direto pro lp, sem passar por shell
-    const args = ['-d', dest, '-n', String(numCopies), '-o', `ColorModel=${colorModel}`, '-o', `sides=${sides}`];
-    if (hasRanges) args.push('-o', `page-ranges=${pageRanges}`);
-    args.push('--', tempFile);
+      const dest = CUPS_IPP_URL || CUPS_PRINTER;
+      const colorModel = printColor === 'color' ? 'RGB' : 'Gray';
+      const sides = printDuplex === 'duplex' ? 'two-sided-long-edge' : 'one-sided';
+      // execFile: argumentos vão direto pro lp, sem passar por shell
+      const args = ['-d', dest, '-n', String(numCopies), '-o', `ColorModel=${colorModel}`, '-o', `sides=${sides}`];
+      if (hasRanges) args.push('-o', `page-ranges=${pageRanges}`);
+      args.push('--', tempFile);
 
-    const { error, stdout, stderr } = await runFile('lp', args);
-    if (error) {
-      console.error('CUPS error:', stderr || error.message);
-      return res.status(500).json({ error: `Falha ao enviar para impressora: ${stderr || error.message}` });
+      const { error, stdout, stderr } = await runFile('lp', args);
+      if (error) {
+        console.error('CUPS error:', stderr || error.message);
+        return res.status(500).json({ error: `Falha ao enviar para impressora: ${stderr || error.message}` });
+      }
+
+      // stdout: "request id is printflow-23 (1 file(s))"
+      const jobId = stdout.match(/request id is (\S+)/)?.[1] || stdout.trim();
+      console.log('CUPS job sent:', jobId, `(${numCopies} cópia(s)${hasRanges ? `, páginas ${pageRanges}` : ''}, ${totalPages} pág. cobradas)`);
+
+      const job = {
+        jobId,
+        clientRef: `kiosk-${os.hostname()}-${jobId}-${Date.now()}`,
+        documentId,
+        documentName,
+        pages: totalPages,
+        color: printColor,
+        duplex: printDuplex,
+        token,
+        owner,
+        cost: quote.cost,
+        status: 'printing',
+        createdAt: Date.now(),
+      };
+      printJobs.set(jobId, job);
+      watchJob(job);
+
+      res.json({ message: 'Documento enviado para impressão', jobId, cost: quote.cost });
+    } catch (err) {
+      console.error('CUPS print error:', err.message);
+      const status = err.status && err.status < 500 ? err.status : 500;
+      res.status(status).json({ error: status === 500 ? `Erro ao processar impressão: ${err.message}` : err.message, code: err.code });
+    } finally {
+      // O CUPS copia o arquivo ao aceitar o job, então já pode apagar
+      if (tempFile) fs.unlink(tempFile, () => {});
     }
-
-    // stdout: "request id is printflow-23 (1 file(s))"
-    const jobId = stdout.match(/request id is (\S+)/)?.[1] || stdout.trim();
-    console.log('CUPS job sent:', jobId, `(${numCopies} cópia(s)${hasRanges ? `, páginas ${pageRanges}` : ''}, ${totalPages} pág. cobradas)`);
-
-    const job = {
-      jobId,
-      clientRef: `kiosk-${os.hostname()}-${jobId}-${Date.now()}`,
-      documentId,
-      documentName,
-      pages: totalPages,
-      color: printColor,
-      duplex: printDuplex,
-      token,
-      status: 'printing',
-      createdAt: Date.now(),
-    };
-    printJobs.set(jobId, job);
-    watchJob(job);
-
-    res.json({ message: 'Documento enviado para impressão', jobId, cost: quote.cost });
-  } catch (err) {
-    console.error('CUPS print error:', err.message);
-    const status = err.status && err.status < 500 ? err.status : 500;
-    res.status(status).json({ error: status === 500 ? `Erro ao processar impressão: ${err.message}` : err.message, code: err.code });
-  } finally {
-    // O CUPS copia o arquivo ao aceitar o job, então já pode apagar
-    if (tempFile) fs.unlink(tempFile, () => {});
-  }
+  });
 });
 
 // Poll print job status

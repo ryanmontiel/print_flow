@@ -54,6 +54,7 @@ export default function KioskPrintPage() {
   const [step, setStep] = useState<Step>('select')
   const [printJobId, setPrintJobId] = useState<string | null>(null)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const printStartingRef = useRef(false)
 
   const isPdf = selected?.mimetype === 'application/pdf'
   const selectedPageCount = isPdf ? pdfSelectedPages.size : manualPages
@@ -127,7 +128,9 @@ export default function KioskPrintPage() {
   }
 
   const handlePrint = async () => {
-    if (!selected) return
+    // Trava síncrona: toques repetidos antes de a tela redesenhar geravam vários trabalhos
+    if (!selected || printStartingRef.current) return
+    printStartingRef.current = true
     setPrinting(true)
     setError('')
     setSuccess('')
@@ -150,6 +153,8 @@ export default function KioskPrintPage() {
       setPrinting(false)
       setStep('error')
       setError(err instanceof Error ? err.message : 'Erro ao iniciar impressão')
+    } finally {
+      printStartingRef.current = false
     }
   }
 
