@@ -1,3 +1,25 @@
+✔ login de dev devolve token com papel de desenvolvedor
+✔ painel de métricas exige login (401) e recusa token de aluno (403)
+✔ token de dev não abre nenhuma rota de aluno
+✔ aluno não vira dev forjando o papel no token
+✔ token de dev expirado é recusado
+✔ credencial de dev não funciona no kiosk
+✔ senha de dev errada responde igual a uma conta inexistente
+✔ métricas de outubro batem com os dados (fuso de Brasília)
+✔ filtro por um dia específico
+✔ período "tudo" começa no primeiro registro e agrupa por mês quando longo
+✔ datas inválidas: início depois do fim é recusado
+✔ métricas não expõem email, nome nem hash de nenhum aluno
+✔ dev busca aluno por nome ou email e vê o saldo
+✔ adicionar créditos: saldo muda e o aluno vê no extrato quem, quando e por quê
+✔ remover créditos aparece como débito; não deixa o saldo negativo
+✔ definir saldo grava a diferença como transação
+✔ ajuste exige motivo, valor válido e aluno existente
+✔ clique repetido (mesmo pedido) ajusta uma vez só
+✔ aluno não acessa busca, ajuste nem histórico de ajustes
+✔ histórico de ajustes lista tudo, do mais recente ao mais antigo, com aluno, valores e motivo
+✔ métricas contam ajustes à parte, fora das compras por Pix
+✔ login de dev bloqueia após 5 senhas erradas (mesmo com a senha certa depois)
 ✔ cadastro aceita só email institucional
 ✔ cadastro exige senha forte
 ✔ cadastro envia código de 6 dígitos e a verificação libera o login
@@ -38,11 +60,11 @@
 ✔ rota inexistente responde 404 rápido (não fica pendurada)
 ⚠ força bruta no login: bloquear após várias senhas erradas # não há limite de tentativas de login
 ⚠ força bruta no código de verificação: bloquear após várias tentativas # não há limite de tentativas no código de 6 dígitos
-ℹ tests 40
-ℹ pass 38
+ℹ tests 62
+ℹ pass 60
 ℹ fail 0
 ℹ todo 2
-ℹ duration_ms 827.879591
+ℹ duration_ms 2461.805125
 ✖ failing tests:
 ⚠ força bruta no login: bloquear após várias senhas erradas # não há limite de tentativas de login
 ⚠ força bruta no código de verificação: bloquear após várias tentativas # não há limite de tentativas no código de 6 dígitos

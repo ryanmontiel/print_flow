@@ -402,26 +402,39 @@ const SESSION_TTL_MS = {
 
 const passwordStamp = (user) => hmac(`pw|${user.senhahash || ''}`).slice(0, 16);
 
-const createSessionToken = (user, ttlMs) => {
-  const payload = Buffer.from(JSON.stringify({ e: normalizeEmail(user.email), x: Date.now() + ttlMs, p: passwordStamp(user) })).toString('base64url');
+const signToken = (data) => {
+  const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
   return `${payload}.${hmac(`session|${payload}`)}`;
 };
 
-const verifySessionToken = async (token) => {
+const createSessionToken = (user, ttlMs) =>
+  signToken({ e: normalizeEmail(user.email), x: Date.now() + ttlMs, p: passwordStamp(user) });
+
+// Confere assinatura e validade; devolve o conteúdo do token ou null
+const readToken = (token) => {
   const [payload, sig] = String(token || '').split('.');
   if (!payload || !sig || !safeEqual(sig, hmac(`session|${payload}`))) return null;
   let data;
   try { data = JSON.parse(Buffer.from(payload, 'base64url').toString()); } catch { return null; }
   if (!data?.e || !(Number(data.x) > Date.now())) return null;
+  return data;
+};
+
+const bearer = (req) => /^Bearer\s+(\S+)$/i.exec(req.get('authorization') || '')?.[1];
+
+const verifySessionToken = async (token) => {
+  const data = readToken(token);
+  // Tokens com papel (r) não são de aluno: não abrem as rotas de aluno
+  if (!data || data.r) return null;
   const user = await findUserByEmail(data.e);
   if (!user || !safeEqual(String(data.p || ''), passwordStamp(user))) return null;
   return user;
 };
 
 const requireAuth = async (req, res, next) => {
-  const m = /^Bearer\s+(\S+)$/i.exec(req.get('authorization') || '');
+  const token = bearer(req);
   try {
-    const user = m ? await verifySessionToken(m[1]) : null;
+    const user = token ? await verifySessionToken(token) : null;
     if (!user) return res.status(401).json({ error: 'Sessão expirada. Faça login novamente.', code: 'SESSION_EXPIRED' });
     req.user = user;
     next();
@@ -429,6 +442,64 @@ const requireAuth = async (req, res, next) => {
     console.error('Auth error:', err);
     res.status(500).json({ error: 'Falha na autenticação' });
   }
+};
+
+// ── Acesso de desenvolvedor (painel de métricas) ─────────────────────
+// Credencial fora do banco de alunos, definida nas variáveis de ambiente:
+// DEV_EMAIL e DEV_PASSWORD_HASH (bcrypt; gere com `npm run dev:credencial`).
+// Sem as duas, o acesso de dev fica desativado.
+const DEV_EMAIL = normalizeEmail(process.env.DEV_EMAIL);
+const DEV_PASSWORD_HASH = process.env.DEV_PASSWORD_HASH || '';
+const DEV_TTL_MS = 8 * 60 * 60 * 1000;
+const isDevEmail = (email) => Boolean(DEV_EMAIL && DEV_PASSWORD_HASH) && normalizeEmail(email) === DEV_EMAIL;
+// Trocar o DEV_PASSWORD_HASH invalida as sessões de dev abertas
+const devStamp = () => hmac(`dev|${DEV_PASSWORD_HASH}`).slice(0, 16);
+
+const isDevToken = (data) =>
+  Boolean(data && data.r === 'dev' && DEV_EMAIL && DEV_PASSWORD_HASH && data.e === DEV_EMAIL && safeEqual(String(data.p || ''), devStamp()));
+
+const requireDev = (req, res, next) => {
+  const data = readToken(bearer(req));
+  if (!data) return res.status(401).json({ error: 'Sessão expirada. Faça login novamente.', code: 'SESSION_EXPIRED' });
+  if (!isDevToken(data)) return res.status(403).json({ error: 'Acesso restrito ao desenvolvedor' });
+  next();
+};
+
+// Limite de tentativas do login de dev: 5 erros por IP a cada 15 min.
+// Fica em memória, então vale por instância do servidor.
+const DEV_MAX_FAILURES = 5;
+const DEV_LOCK_MS = 15 * 60 * 1000;
+const devFailures = new Map(); // ip -> { count, since }
+
+const devLocked = (ip) => {
+  const f = devFailures.get(ip);
+  if (!f) return false;
+  if (Date.now() - f.since > DEV_LOCK_MS) { devFailures.delete(ip); return false; }
+  return f.count >= DEV_MAX_FAILURES;
+};
+
+const devLogin = async (req, res, senha, client) => {
+  const ip = req.ip || 'desconhecido';
+  if (devLocked(ip)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde 15 minutos.' });
+  let ok = false;
+  try { ok = await bcrypt.compare(String(senha), DEV_PASSWORD_HASH); } catch { ok = false; }
+  if (!ok) {
+    const f = devFailures.get(ip) || { count: 0, since: Date.now() };
+    f.count++;
+    devFailures.set(ip, f);
+    console.warn('[dev] login recusado de', ip, `(${f.count}/${DEV_MAX_FAILURES})`);
+    return res.status(401).json({ error: 'Credenciais inválidas' });
+  }
+  devFailures.delete(ip);
+  if (client === 'kiosk') return res.status(403).json({ error: 'O acesso de desenvolvedor não pode ser usado no kiosk' });
+  console.log('[dev] login de desenvolvedor de', ip);
+  res.json({
+    message: 'Login efetuado com sucesso',
+    token: signToken({ e: DEV_EMAIL, r: 'dev', x: Date.now() + DEV_TTL_MS, p: devStamp() }),
+    email: DEV_EMAIL,
+    displayName: 'Desenvolvedor',
+    role: 'dev',
+  });
 };
 
 const generateCode = () => crypto.randomInt(100000, 1000000).toString();
@@ -451,6 +522,7 @@ const getUnitPrice = (color, duplex) => {
   return p && p[duplex] != null ? p[duplex] : PRINT_PRICES.bw.single;
 };
 const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+const formatValor = (v) => `R$ ${Number(v).toFixed(2).replace('.', ',')}`;
 // "single" = preço por página; "duplex" = preço por folha (2 páginas por folha).
 const getPrintCost = (color, duplex, pages) => {
   const price = getUnitPrice(color, duplex);
@@ -577,6 +649,7 @@ app.post('/api/login', async (req, res) => {
   const normEmail = String(email).trim().toLowerCase();
 
   try {
+    if (isDevEmail(normEmail)) return await devLogin(req, res, senha, client);
     const user = await authenticateUser(normEmail, senha);
     if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
     if (String(user.verificado).toLowerCase() !== 'true') {
@@ -1195,6 +1268,285 @@ app.post('/api/webhook-infinitepay', async (req, res) => {
   } catch (err) {
     console.error('[webhook-infinitepay] error:', err);
     return res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
+// ── Métricas (painel do desenvolvedor) ───────────────────────────────
+const METRICS_TZ = 'America/Sao_Paulo';
+const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: METRICS_TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+const hourFmt = new Intl.DateTimeFormat('en-GB', { timeZone: METRICS_TZ, hour: '2-digit', hourCycle: 'h23' });
+const dayKey = (iso) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : dayFmt.format(d);
+};
+const hourOf = (iso) => Number(hourFmt.format(new Date(iso)));
+const addDays = (day, n) => {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+const PRINT_TYPES = [
+  { key: 'bw_single', label: 'P&B simples' },
+  { key: 'bw_duplex', label: 'P&B frente e verso' },
+  { key: 'color_single', label: 'Colorido simples' },
+  { key: 'color_duplex', label: 'Colorido frente e verso' },
+];
+const isPixCredit = (t) => t.type === 'credit' && (t.order_nsu || /InfinitePay/i.test(String(t.description || '')));
+
+// Leitura completa do banco guardada por 60 s: trocar o filtro não refaz a consulta
+let metricsSnapshot = { at: 0, records: null };
+const recordsForMetrics = async (fresh) => {
+  if (!fresh && metricsSnapshot.records && Date.now() - metricsSnapshot.at < 60_000) return metricsSnapshot;
+  metricsSnapshot = { at: Date.now(), records: await listAllRecords() };
+  return metricsSnapshot;
+};
+
+const computeMetrics = (records, from, to) => {
+  const inRange = (day) => Boolean(day) && (!from || day >= from) && day <= to;
+  const imp = { trabalhos: 0, paginas: 0, receita: 0, alunos: new Set(), porTipo: {}, porHora: Array(24).fill(0) };
+  for (const t of PRINT_TYPES) imp.porTipo[t.key] = { trabalhos: 0, paginas: 0, receita: 0 };
+  const cred = { compras: 0, valor: 0, compradores: new Set(), porValor: {}, manuais: { lancamentos: 0, valor: 0 } };
+  const pag = { linksGerados: 0, pagos: 0, pendentes: 0, valorPendente: 0 };
+  const ajustes = { lancamentos: 0, adicionado: 0, removido: 0 };
+  const alunos = { total: 0, verificados: 0, novos: 0, ativos: 0 };
+  const situacao = { saldoEmContas: 0, alunosComSaldo: 0, documentos: 0, armazenamentoBytes: 0, compartilhados: 0, compartilhamentos: { pendentes: 0, aceitos: 0, recusados: 0 } };
+  const porDia = new Map();
+  const bucket = (day) => {
+    if (!porDia.has(day)) porDia.set(day, { receitaImpressoes: 0, creditosComprados: 0, trabalhos: 0, paginas: 0 });
+    return porDia.get(day);
+  };
+  let primeiroDia = null;
+  const marcaDia = (day) => { if (day && (!primeiroDia || day < primeiroDia)) primeiroDia = day; };
+
+  for (const r of records) {
+    if (!r.email) continue;
+    alunos.total++;
+    if (String(r.verificado).toLowerCase() === 'true') alunos.verificados++;
+    if (inRange(dayKey(r.criadoem))) alunos.novos++;
+    if (inRange(dayKey(r.ultimologinem))) alunos.ativos++;
+
+    const saldo = Number(r.creditos || 0);
+    situacao.saldoEmContas += saldo;
+    if (saldo > 0) situacao.alunosComSaldo++;
+    for (const d of parseJsonField(r.documentos, [])) {
+      situacao.documentos++;
+      if (d.compartilhado_de_email) situacao.compartilhados++;
+      else situacao.armazenamentoBytes += Number(d.size) || 0;
+    }
+    for (const n of parseJsonField(r.notificacoes, [])) {
+      if (n.tipo !== 'share_request') continue;
+      if (n.status === 'accepted') situacao.compartilhamentos.aceitos++;
+      else if (n.status === 'rejected') situacao.compartilhamentos.recusados++;
+      else situacao.compartilhamentos.pendentes++;
+    }
+
+    for (const h of parseJsonField(r.historicoimpressao, [])) {
+      const day = dayKey(h.printedAt);
+      marcaDia(day);
+      if (!inRange(day)) continue;
+      const pages = Number(h.pages) || 0, cost = Number(h.cost) || 0;
+      imp.trabalhos++; imp.paginas += pages; imp.receita += cost;
+      imp.alunos.add(r.email);
+      const tipo = imp.porTipo[`${h.color === 'color' ? 'color' : 'bw'}_${h.duplex === 'duplex' ? 'duplex' : 'single'}`];
+      tipo.trabalhos++; tipo.paginas += pages; tipo.receita += cost;
+      imp.porHora[hourOf(h.printedAt)]++;
+      const b = bucket(day); b.receitaImpressoes += cost; b.trabalhos++; b.paginas += pages;
+    }
+
+    for (const t of parseJsonField(r.transacoes, [])) {
+      if (t.origem === 'equipe') {
+        if (!inRange(dayKey(t.createdAt))) continue;
+        const amount = Number(t.amount) || 0;
+        ajustes.lancamentos++;
+        if (amount > 0) ajustes.adicionado += amount; else ajustes.removido += -amount;
+        continue;
+      }
+      if (t.type !== 'credit') continue;
+      const day = dayKey(t.createdAt);
+      marcaDia(day);
+      if (!inRange(day)) continue;
+      const amount = Number(t.amount) || 0;
+      if (isPixCredit(t)) {
+        cred.compras++; cred.valor += amount; cred.compradores.add(r.email);
+        const k = String(round2(amount));
+        cred.porValor[k] = (cred.porValor[k] || 0) + 1;
+        bucket(day).creditosComprados += amount;
+      } else {
+        cred.manuais.lancamentos++; cred.manuais.valor += amount;
+      }
+    }
+
+    for (const p of Object.values(parseJsonField(r.pagamentospendentes, {}))) {
+      if (!inRange(dayKey(p.createdAt))) continue;
+      pag.linksGerados++;
+      if (p.status === 'completed') pag.pagos++;
+      else { pag.pendentes++; pag.valorPendente += Number(p.amount) || 0; }
+    }
+  }
+
+  // Série temporal: um ponto por dia (ou por mês, em períodos longos), com zeros
+  const inicio = from || primeiroDia || to;
+  const dias = Math.round((new Date(`${to}T12:00:00Z`) - new Date(`${inicio}T12:00:00Z`)) / 864e5) + 1;
+  const porMes = dias > 92;
+  const serie = new Map();
+  for (let d = inicio; d <= to; d = addDays(d, 1)) {
+    const k = porMes ? d.slice(0, 7) : d;
+    if (!serie.has(k)) serie.set(k, { periodo: k, receitaImpressoes: 0, creditosComprados: 0, trabalhos: 0, paginas: 0 });
+    const b = porDia.get(d);
+    if (b) {
+      const s = serie.get(k);
+      s.receitaImpressoes += b.receitaImpressoes; s.creditosComprados += b.creditosComprados; s.trabalhos += b.trabalhos; s.paginas += b.paginas;
+    }
+  }
+
+  const compraram = cred.compradores.size;
+  return {
+    periodo: { from: inicio, to, dias, granularidade: porMes ? 'mes' : 'dia' },
+    impressoes: {
+      trabalhos: imp.trabalhos,
+      paginas: imp.paginas,
+      receita: round2(imp.receita),
+      ticketMedio: imp.trabalhos ? round2(imp.receita / imp.trabalhos) : 0,
+      paginasPorTrabalho: imp.trabalhos ? round2(imp.paginas / imp.trabalhos) : 0,
+      alunos: imp.alunos.size,
+      porTipo: PRINT_TYPES.map((t) => ({ tipo: t.key, label: t.label, ...imp.porTipo[t.key], receita: round2(imp.porTipo[t.key].receita) })),
+      porHora: imp.porHora,
+    },
+    creditos: {
+      compras: cred.compras,
+      valor: round2(cred.valor),
+      compradores: compraram,
+      ticketMedio: cred.compras ? round2(cred.valor / cred.compras) : 0,
+      porValor: Object.entries(cred.porValor).map(([valor, compras]) => ({ valor: Number(valor), compras })).sort((a, b) => a.valor - b.valor),
+      manuais: { lancamentos: cred.manuais.lancamentos, valor: round2(cred.manuais.valor) },
+    },
+    ajustes: { lancamentos: ajustes.lancamentos, adicionado: round2(ajustes.adicionado), removido: round2(ajustes.removido) },
+    pagamentos: {
+      ...pag,
+      valorPendente: round2(pag.valorPendente),
+      conversao: pag.linksGerados ? round2(pag.pagos / pag.linksGerados) : 0,
+    },
+    alunos: { ...alunos, imprimiram: imp.alunos.size, compraram },
+    situacao: { ...situacao, saldoEmContas: round2(situacao.saldoEmContas) },
+    serie: [...serie.values()].map((s) => ({ ...s, receitaImpressoes: round2(s.receitaImpressoes), creditosComprados: round2(s.creditosComprados) })),
+  };
+};
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+app.get('/api/dev/metrics', requireDev, async (req, res) => {
+  const hoje = dayKey(new Date().toISOString());
+  const todo = req.query.from === 'all';
+  const to = DAY_RE.test(String(req.query.to || '')) ? String(req.query.to) : hoje;
+  const from = todo ? null : DAY_RE.test(String(req.query.from || '')) ? String(req.query.from) : addDays(to, -29);
+  if (from && from > to) return res.status(400).json({ error: 'A data inicial é depois da final' });
+  try {
+    const snap = await recordsForMetrics(req.query.fresh === '1');
+    res.json({ geradoEm: new Date(snap.at).toISOString(), ...computeMetrics(snap.records, from, to) });
+  } catch (err) {
+    console.error('Dev metrics error:', err);
+    res.status(500).json({ error: 'Falha ao calcular métricas' });
+  }
+});
+
+// ── Ajuste de créditos pelo desenvolvedor ────────────────────────────
+// Cada ajuste vira uma transação no extrato do aluno ("Ajuste feito pela equipe
+// PrintFlow", com motivo, data e hora) e guarda quem fez e o saldo antes/depois.
+const AJUSTE_MAX = 1000;
+
+app.post('/api/dev/users/search', requireDev, async (req, res) => {
+  const q = String(req.body.q || '').trim().toLowerCase();
+  if (q.length < 3) return res.json({ users: [] });
+  try {
+    const records = await listAllRecords();
+    const users = records
+      .filter((r) => r.email && (normalizeEmail(r.email).includes(q) || String(r.nome || '').toLowerCase().includes(q)))
+      .slice(0, 10)
+      .map((r) => ({ email: normalizeEmail(r.email), nome: String(r.nome || ''), creditos: round2(Number(r.creditos || 0)), verificado: String(r.verificado).toLowerCase() === 'true' }));
+    res.json({ users });
+  } catch (err) {
+    console.error('Dev search error:', err);
+    res.status(500).json({ error: 'Falha ao buscar alunos' });
+  }
+});
+
+app.post('/api/dev/credits/adjust', requireDev, async (req, res) => {
+  const { email, operacao, requestId } = req.body;
+  const valor = round2(Number(req.body.valor));
+  const motivo = String(req.body.motivo || '').trim();
+  if (!email || !['adicionar', 'remover', 'definir'].includes(operacao)) return res.status(400).json({ error: 'Aluno e operação são obrigatórios' });
+  if (!Number.isFinite(valor) || valor < 0 || (operacao !== 'definir' && valor === 0) || valor > AJUSTE_MAX) {
+    return res.status(400).json({ error: `Valor inválido (até ${formatValor(AJUSTE_MAX)} por ajuste)` });
+  }
+  if (motivo.length < 5 || motivo.length > 200) return res.status(400).json({ error: 'Informe o motivo do ajuste (5 a 200 caracteres)' });
+  if (!/^[\w-]{8,64}$/.test(String(requestId || ''))) return res.status(400).json({ error: 'Identificador do pedido inválido' });
+
+  try {
+    // Lê o registro na hora, para calcular sobre o saldo mais recente
+    const user = await findUserByEmail(email);
+    if (!user) return res.status(404).json({ error: 'Aluno não encontrado' });
+    const transactions = parseJsonField(user.transacoes, []);
+    const saldoAnterior = round2(Number(user.creditos || 0));
+
+    // Clique repetido no painel: o mesmo pedido não ajusta duas vezes
+    const repetido = transactions.find((t) => t.ajusteId === requestId);
+    if (repetido) return res.json({ message: 'Ajuste já registrado', saldoAnterior: repetido.ajuste.saldoAnterior, saldoNovo: repetido.ajuste.saldoNovo, transacao: repetido });
+
+    const saldoNovo = operacao === 'adicionar' ? round2(saldoAnterior + valor)
+      : operacao === 'remover' ? round2(saldoAnterior - valor)
+      : valor;
+    if (saldoNovo < 0) return res.status(400).json({ error: `O aluno tem ${formatValor(saldoAnterior)}; não dá para remover ${formatValor(valor)}` });
+    const diferenca = round2(saldoNovo - saldoAnterior);
+    if (diferenca === 0) return res.status(400).json({ error: 'O saldo já é esse valor' });
+
+    const agora = new Date().toISOString();
+    const transacao = {
+      amount: diferenca,
+      type: diferenca > 0 ? 'credit' : 'debit',
+      description: 'Ajuste feito pela equipe PrintFlow',
+      motivo,
+      origem: 'equipe',
+      ajusteId: requestId,
+      ajuste: { operacao, saldoAnterior, saldoNovo, por: DEV_EMAIL, em: agora },
+      createdAt: agora,
+    };
+    transactions.push(transacao);
+    const ok = await updateUserRecord(user.__id, { creditos: String(saldoNovo), transacoes: JSON.stringify(transactions) });
+    if (!ok) throw new Error('Falha ao gravar ajuste');
+    metricsSnapshot = { at: 0, records: null };
+    console.log('[dev] ajuste de créditos', { aluno: normalizeEmail(user.email), operacao, saldoAnterior, saldoNovo, motivo });
+    res.json({ message: 'Ajuste registrado', saldoAnterior, saldoNovo, transacao });
+  } catch (err) {
+    console.error('Dev adjust error:', err);
+    res.status(500).json({ error: 'Falha ao ajustar créditos' });
+  }
+});
+
+// Histórico de todos os ajustes feitos pela equipe, do mais recente para o mais antigo
+app.get('/api/dev/adjustments', requireDev, async (req, res) => {
+  try {
+    const records = await listAllRecords();
+    const ajustes = [];
+    for (const r of records) {
+      for (const t of parseJsonField(r.transacoes, [])) {
+        if (t.origem !== 'equipe') continue;
+        ajustes.push({
+          em: t.createdAt,
+          aluno: { email: normalizeEmail(r.email), nome: String(r.nome || '') },
+          valor: Number(t.amount) || 0,
+          operacao: t.ajuste?.operacao,
+          saldoAnterior: t.ajuste?.saldoAnterior,
+          saldoNovo: t.ajuste?.saldoNovo,
+          motivo: t.motivo || '',
+          por: t.ajuste?.por || '',
+        });
+      }
+    }
+    ajustes.sort((a, b) => String(b.em).localeCompare(String(a.em)));
+    res.json({ ajustes: ajustes.slice(0, 200) });
+  } catch (err) {
+    console.error('Dev adjustments error:', err);
+    res.status(500).json({ error: 'Falha ao listar ajustes' });
   }
 });
 

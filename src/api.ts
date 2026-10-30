@@ -127,6 +127,9 @@ export type Transaction = {
   type: 'credit' | 'debit'
   description: string
   createdAt: string
+  // Ajustes feitos pela equipe pelo painel de desenvolvedor
+  origem?: 'equipe'
+  motivo?: string
 }
 
 export type PrintConfig = {
@@ -154,7 +157,7 @@ export const formatBRL = (value: number) =>
 
 // Auth
 export const apiLogin = (email: string, senha: string, remember = false) =>
-  request<{ message: string; token: string; email: string; displayName: string; printColor: string; printDuplex: string }>('/api/login', {
+  request<{ message: string; token: string; email: string; displayName: string; printColor?: string; printDuplex?: string; role?: 'dev' }>('/api/login', {
     method: 'POST',
     body: { email, senha, remember },
   })
@@ -331,3 +334,65 @@ export const apiSearchUsers = (q: string) => {
     body: { q },
   })
 }
+
+// ── Painel do desenvolvedor ──────────────────────────────────────────
+export type DevMetrics = {
+  geradoEm: string
+  periodo: { from: string; to: string; dias: number; granularidade: 'dia' | 'mes' }
+  impressoes: {
+    trabalhos: number
+    paginas: number
+    receita: number
+    ticketMedio: number
+    paginasPorTrabalho: number
+    alunos: number
+    porTipo: { tipo: string; label: string; trabalhos: number; paginas: number; receita: number }[]
+    porHora: number[]
+  }
+  creditos: {
+    compras: number
+    valor: number
+    compradores: number
+    ticketMedio: number
+    porValor: { valor: number; compras: number }[]
+    manuais: { lancamentos: number; valor: number }
+  }
+  pagamentos: { linksGerados: number; pagos: number; pendentes: number; valorPendente: number; conversao: number }
+  ajustes: { lancamentos: number; adicionado: number; removido: number }
+  alunos: { total: number; verificados: number; novos: number; ativos: number; imprimiram: number; compraram: number }
+  situacao: {
+    saldoEmContas: number
+    alunosComSaldo: number
+    documentos: number
+    armazenamentoBytes: number
+    compartilhados: number
+    compartilhamentos: { pendentes: number; aceitos: number; recusados: number }
+  }
+  serie: { periodo: string; receitaImpressoes: number; creditosComprados: number; trabalhos: number; paginas: number }[]
+}
+
+export const apiDevMetrics = (params: { from: string; to: string; fresh?: boolean }) =>
+  request<DevMetrics>('/api/dev/metrics', {
+    params: { from: params.from, to: params.to, ...(params.fresh ? { fresh: '1' } : {}) },
+  })
+
+export type DevAluno = { email: string; nome: string; creditos: number; verificado: boolean }
+export type DevAjuste = {
+  em: string
+  aluno: { email: string; nome: string }
+  valor: number
+  operacao: 'adicionar' | 'remover' | 'definir'
+  saldoAnterior: number
+  saldoNovo: number
+  motivo: string
+  por: string
+}
+
+export const apiDevSearchUsers = (q: string) =>
+  request<{ users: DevAluno[] }>('/api/dev/users/search', { method: 'POST', body: { q } })
+
+export const apiDevAdjustCredits = (params: { email: string; operacao: DevAjuste['operacao']; valor: number; motivo: string; requestId: string }) =>
+  request<{ message: string; saldoAnterior: number; saldoNovo: number }>('/api/dev/credits/adjust', { method: 'POST', body: params })
+
+export const apiDevAdjustments = () =>
+  request<{ ajustes: DevAjuste[] }>('/api/dev/adjustments')

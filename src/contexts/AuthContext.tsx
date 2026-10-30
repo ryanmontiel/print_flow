@@ -6,11 +6,12 @@ type User = {
   nome: string
   printColor?: 'color' | 'bw'
   printDuplex?: 'single' | 'duplex'
+  role?: 'dev'
 }
 
 type AuthContextType = {
   user: User | null
-  login: (email: string, nome: string, remember?: boolean, printColor?: 'color' | 'bw', printDuplex?: 'single' | 'duplex') => void
+  login: (email: string, nome: string, remember?: boolean, printColor?: 'color' | 'bw', printDuplex?: 'single' | 'duplex', role?: 'dev') => void
   logout: () => void
   isLoading: boolean
 }
@@ -42,8 +43,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false)
   }, [])
 
-  const login = (email: string, nome: string, remember: boolean = false, printColor?: 'color' | 'bw', printDuplex?: 'single' | 'duplex') => {
-    const u = { email, nome, printColor, printDuplex }
+  const login = (email: string, nome: string, remember: boolean = false, printColor?: 'color' | 'bw', printDuplex?: 'single' | 'duplex', role?: 'dev') => {
+    const u = { email, nome, printColor, printDuplex, role }
     const storage = remember ? localStorage : sessionStorage
     storage.setItem('printflow-user', JSON.stringify(u))
     setUser(u)

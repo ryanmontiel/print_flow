@@ -207,7 +207,13 @@ export default function HomePage() {
                     {tx.type === 'credit' ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{tx.description}</p>
+                    <p className="text-sm font-medium truncate">
+                    {tx.description}
+                    {tx.origem === 'equipe' && (
+                      <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-secondary-50 dark:bg-secondary-900/30 text-secondary-700 dark:text-secondary-300">Ajuste da equipe</span>
+                    )}
+                  </p>
+                  {tx.motivo && <p className="text-xs text-gray-500 dark:text-gray-400 truncate">Motivo: {tx.motivo}</p>}
                     <p className="text-xs text-gray-400">{new Date(tx.createdAt).toLocaleString('pt-BR')}</p>
                   </div>
                   <span className={`text-sm font-semibold shrink-0 ${tx.type === 'credit' ? 'text-green-600' : 'text-red-600'}`}>

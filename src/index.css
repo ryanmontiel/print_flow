@@ -38,3 +38,19 @@ input:-webkit-autofill:focus {
   -webkit-box-shadow: 0 0 0 30px #1f2937 inset;
   -webkit-text-fill-color: #e5e7eb;
 }
+
+/* Cores dos gráficos do painel de dev (paleta validada para daltonismo nos dois temas) */
+.viz-root {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --viz-grid: #e5e7eb;
+  --viz-axis: #6b7280;
+  --viz-surface: #ffffff;
+}
+.dark .viz-root {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --viz-grid: #374151;
+  --viz-axis: #9ca3af;
+  --viz-surface: #1f2937;
+}

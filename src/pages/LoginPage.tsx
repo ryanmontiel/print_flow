@@ -170,6 +170,13 @@ export default function LoginPage() {
         }
       } else {
         const result = await apiLogin(email, senha, remember)
+        if (result.role === 'dev') {
+          // Sessão de dev nunca fica salva entre aberturas do navegador
+          setToken(result.token, false)
+          login(result.email, result.displayName, false, undefined, undefined, 'dev')
+          setTimeout(() => navigate('/dev'), 300)
+          return
+        }
         setToken(result.token, remember)
         login(result.email, result.displayName, remember, result.printColor as 'color' | 'bw', result.printDuplex as 'single' | 'duplex')
         setTimeout(() => navigate('/home'), 500)

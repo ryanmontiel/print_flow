@@ -10,6 +10,8 @@ import PrintHistoryPage from './pages/PrintHistoryPage'
 import ProfilePage from './pages/ProfilePage'
 import NotificationsPage from './pages/NotificationsPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
+import DevDashboardPage from './pages/DevDashboardPage'
+import DevCreditsPage from './pages/DevCreditsPage'
 import OnboardingModal from './components/OnboardingModal'
 import CookieConsent from './components/CookieConsent'
 import { useState, useEffect, useCallback } from 'react'
@@ -33,7 +35,18 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) return <Navigate to="/login" replace />
+  // O desenvolvedor só vê o painel de métricas
+  if (user.role === 'dev') return <Navigate to="/dev" replace />
   return <Layout>{children}</Layout>
+}
+
+// Painel de métricas: só para a credencial de dev (o servidor também confere)
+function DevRoute({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth()
+  if (isLoading) return null
+  if (!user) return <Navigate to="/login" replace />
+  if (user.role !== 'dev') return <Navigate to="/home" replace />
+  return <>{children}</>
 }
 
 function AppRoutes() {
@@ -45,7 +58,7 @@ function AppRoutes() {
     const saved = localStorage.getItem(COOKIE_KEY) as 'accepted' | 'rejected' | null
     setCookieConsent(saved)
 
-    if (!user) return
+    if (!user || user.role === 'dev') return
 
     const isNewReg = localStorage.getItem(NEW_REG_KEY) === 'true'
     if (isNewReg) {
@@ -97,7 +110,7 @@ function AppRoutes() {
         <Routes>
           <Route
             path="/login"
-            element={user ? <Navigate to="/home" replace /> : <LoginPage />}
+            element={user ? <Navigate to={user.role === 'dev' ? '/dev' : '/home'} replace /> : <LoginPage />}
           />
           <Route
             path="/reset-password"
@@ -127,19 +140,27 @@ function AppRoutes() {
             path="/notifications"
             element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>}
           />
-          <Route path="*" element={<Navigate to={user ? '/home' : '/login'} replace />} />
+          <Route
+            path="/dev"
+            element={<DevRoute><DevDashboardPage /></DevRoute>}
+          />
+          <Route
+            path="/dev/creditos"
+            element={<DevRoute><DevCreditsPage /></DevRoute>}
+          />
+          <Route path="*" element={<Navigate to={user ? (user.role === 'dev' ? '/dev' : '/home') : '/login'} replace />} />
         </Routes>
       </AnimatePresence>
 
       {/* Cookie consent pops on top of everything when undecided */}
-      {cookieConsent === null && user && (
+      {cookieConsent === null && user && user.role !== 'dev' && (
         <CookieConsent
           onAccept={handleCookieAccept}
           onReject={handleCookieReject}
         />
       )}
 
-      {user && showTutorial && (
+      {user && user.role !== 'dev' && showTutorial && (
         <OnboardingModal onComplete={handleTutorialComplete} />
       )}
     </>

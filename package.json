@@ -15,7 +15,8 @@
     "test:kiosk": "node --test --test-concurrency=1 tests/kiosk/*.test.mjs",
     "test:concorrencia": "PF_SHEET_LATENCY=real node tests/concorrencia/concorrencia.mjs",
     "test:carga": "PF_SHEET_LATENCY=real node tests/carga/carga.mjs",
-    "test:producao": "node tests/producao/producao.mjs"
+    "test:producao": "node tests/producao/producao.mjs",
+    "dev:credencial": "node scripts/gerar-credencial-dev.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1152.0",
