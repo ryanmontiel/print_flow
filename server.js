@@ -448,8 +448,18 @@ const requireAuth = async (req, res, next) => {
 // Credencial fora do banco de alunos, definida nas variáveis de ambiente:
 // DEV_EMAIL e DEV_PASSWORD_HASH (bcrypt; gere com `npm run dev:credencial`).
 // Sem as duas, o acesso de dev fica desativado.
-const DEV_EMAIL = normalizeEmail(process.env.DEV_EMAIL);
-const DEV_PASSWORD_HASH = process.env.DEV_PASSWORD_HASH || '';
+// Valores colados no painel da Vercel às vezes vêm com aspas, espaço ou quebra de linha
+const envLimpo = (v) => String(v || '').trim().replace(/^(['"])(.*)\1$/s, '$2').trim();
+const DEV_EMAIL = normalizeEmail(envLimpo(process.env.DEV_EMAIL));
+const DEV_PASSWORD_HASH = envLimpo(process.env.DEV_PASSWORD_HASH);
+const devConfigStatus = () => {
+  if (!DEV_EMAIL && !DEV_PASSWORD_HASH) return 'desativado';
+  if (!DEV_EMAIL) return 'falta DEV_EMAIL';
+  if (!DEV_PASSWORD_HASH) return 'falta DEV_PASSWORD_HASH';
+  if (!/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(DEV_PASSWORD_HASH)) return `DEV_PASSWORD_HASH inválido (${DEV_PASSWORD_HASH.length} caracteres)`;
+  return 'ativo';
+};
+console.log('[config] acesso de dev:', devConfigStatus());
 const DEV_TTL_MS = 8 * 60 * 60 * 1000;
 const isDevEmail = (email) => Boolean(DEV_EMAIL && DEV_PASSWORD_HASH) && normalizeEmail(email) === DEV_EMAIL;
 // Trocar o DEV_PASSWORD_HASH invalida as sessões de dev abertas
@@ -535,7 +545,20 @@ const getPrintCost = (color, duplex, pages) => {
 // ═══════════════════════════════════════════════════════════════════════
 
 // ── Health ───────────────────────────────────────────────────────────
-app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: Date.now() }));
+// TEMPORÁRIO: diagnóstico da configuração do acesso de dev (só formato e impressões
+// digitais curtas; não expõe email, senha nem hash). Remover depois de configurado.
+const impressao = (v) => (v ? crypto.createHash('sha256').update(v).digest('hex').slice(0, 8) : null);
+app.get('/api/health', (_req, res) => res.json({
+  status: 'ok',
+  timestamp: Date.now(),
+  devDiagnostico: {
+    status: devConfigStatus(),
+    emailBruto: { presente: Boolean(process.env.DEV_EMAIL), tamanho: String(process.env.DEV_EMAIL || '').length },
+    hashBruto: { presente: Boolean(process.env.DEV_PASSWORD_HASH), tamanho: String(process.env.DEV_PASSWORD_HASH || '').length },
+    email: impressao(DEV_EMAIL),
+    hash: impressao(DEV_PASSWORD_HASH),
+  },
+}));
 
 // ── Register ─────────────────────────────────────────────────────────
 app.post('/api/register', async (req, res) => {
