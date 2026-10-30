@@ -5,6 +5,9 @@ import * as pdfjsLib from 'pdfjs-dist'
 const version = pdfjsLib.version
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.mjs`
 
+// Altura útil da área de visualização (max-h-[450px] menos o padding p-4)
+const PREVIEW_MAX_HEIGHT = 418
+
 type Props = {
   url: string
   selectedPages: Set<number>
@@ -19,6 +22,8 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [previewPage, setPreviewPage] = useState(1)
+  const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null)
+  const renderSeqRef = useRef(0)
   const loadPdf = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -47,23 +52,42 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
 
   useEffect(() => {
     if (pdfDoc && canvasRef.current) renderPage(previewPage)
+    // Ao trocar de documento/página ou desmontar, cancela o desenho em andamento
+    return () => {
+      renderSeqRef.current++
+      renderTaskRef.current?.cancel()
+    }
   }, [pdfDoc, previewPage])
 
   const renderPage = async (num: number) => {
     if (!pdfDoc || !canvasRef.current) return
+    // Só o desenho mais recente pode pintar no canvas: um desenho antigo terminando
+    // depois de o canvas ser redimensionado deixava a página cortada/esticada.
+    const seq = ++renderSeqRef.current
+    const previous = renderTaskRef.current
+    previous?.cancel()
     try {
       const page = await pdfDoc.getPage(num)
+      try { await previous?.promise } catch {}
+      if (seq !== renderSeqRef.current || !canvasRef.current) return
       const container = canvasRef.current.parentElement!
       const maxW = Math.min(container.clientWidth - 32, 600)
       const viewport = page.getViewport({ scale: 1 })
-      const scale = maxW / viewport.width
-      const scaled = page.getViewport({ scale })
+      // Encaixa na largura e na altura mantendo a proporção (retrato e paisagem)
+      const scale = Math.min(maxW / viewport.width, PREVIEW_MAX_HEIGHT / viewport.height)
+      const dpr = window.devicePixelRatio || 1
+      const scaled = page.getViewport({ scale: scale * dpr })
       const canvas = canvasRef.current
       canvas.width = scaled.width
       canvas.height = scaled.height
+      canvas.style.width = `${scaled.width / dpr}px`
+      canvas.style.height = `${scaled.height / dpr}px`
       canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
-      await page.render({ canvas, viewport: scaled }).promise
+      const task = page.render({ canvas, viewport: scaled })
+      renderTaskRef.current = task
+      await task.promise
     } catch (err) {
+      if (err instanceof Error && err.name === 'RenderingCancelledException') return
       console.error('PDF render error:', err)
     }
   }
@@ -123,8 +147,8 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-center bg-gray-100 rounded-xl p-4 min-h-[250px] max-h-[450px] overflow-auto">
-        <canvas ref={canvasRef} className="shadow-lg bg-white" />
+      <div className="flex items-center justify-center bg-gray-100 rounded-xl p-4 min-h-[250px] max-h-[450px] overflow-auto">
+        <canvas ref={canvasRef} className="shadow-lg bg-white flex-shrink-0" />
       </div>
 
       <div className="flex items-center justify-between">
@@ -184,6 +208,7 @@ function PdfThumbnail({ page, pageNum, scale }: { page: pdfjsLib.PDFDocumentProx
 
   useEffect(() => {
     let cancelled = false
+    let task: pdfjsLib.RenderTask | null = null
     const render = async () => {
       try {
         const p = await page.getPage(pageNum)
@@ -193,12 +218,17 @@ function PdfThumbnail({ page, pageNum, scale }: { page: pdfjsLib.PDFDocumentProx
         if (!canvas) return
         canvas.width = viewport.width
         canvas.height = viewport.height
-        await p.render({ canvas, viewport }).promise
+        task = p.render({ canvas, viewport })
+        await task.promise
       } catch {}
     }
     render()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      task?.cancel()
+    }
   }, [page, pageNum, scale])
 
-  return <canvas ref={canvasRef} className="block" style={{ width: 72, height: 72 * 1.4 }} />
+  // Altura automática: a miniatura segue a proporção da página
+  return <canvas ref={canvasRef} className="block" style={{ width: 72, height: 'auto' }} />
 }
