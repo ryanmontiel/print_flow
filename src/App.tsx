@@ -15,8 +15,8 @@ import DevCreditsPage from './pages/DevCreditsPage'
 import OnboardingModal from './components/OnboardingModal'
 import CookieConsent from './components/CookieConsent'
 import { useState, useEffect, useCallback } from 'react'
+import { prefs, setConsent, useConsent } from './consent'
 
-const COOKIE_KEY = 'pf-cookie-consent'
 const TUTORIAL_SEEN_KEY = 'pf-tutorial-seen'
 const NEW_REG_KEY = 'pf-new-reg'
 
@@ -51,45 +51,25 @@ function DevRoute({ children }: { children: React.ReactNode }) {
 
 function AppRoutes() {
   const { user, isLoading } = useAuth()
-  const [cookieConsent, setCookieConsent] = useState<'accepted' | 'rejected' | null>(null)
+  const cookieConsent = useConsent()
   const [showTutorial, setShowTutorial] = useState(false)
 
   useEffect(() => {
-    const saved = localStorage.getItem(COOKIE_KEY) as 'accepted' | 'rejected' | null
-    setCookieConsent(saved)
-
     if (!user || user.role === 'dev') return
-
-    const isNewReg = localStorage.getItem(NEW_REG_KEY) === 'true'
-    if (isNewReg) {
-      localStorage.removeItem(NEW_REG_KEY)
+    if (sessionStorage.getItem(NEW_REG_KEY) === 'true') {
+      sessionStorage.removeItem(NEW_REG_KEY)
       setShowTutorial(true)
       return
     }
-
-    if (saved === 'accepted') {
-      if (!localStorage.getItem(TUTORIAL_SEEN_KEY)) {
-        setShowTutorial(true)
-      }
-    } else {
-      setShowTutorial(true)
-    }
+    // Sem consentimento, "já viu o tutorial" vale só até fechar o navegador
+    if (!prefs.get(TUTORIAL_SEEN_KEY)) setShowTutorial(true)
   }, [user])
 
-  const handleCookieAccept = useCallback(() => {
-    localStorage.setItem(COOKIE_KEY, 'accepted')
-    setCookieConsent('accepted')
-  }, [])
-
-  const handleCookieReject = useCallback(() => {
-    localStorage.setItem(COOKIE_KEY, 'rejected')
-    setCookieConsent('rejected')
-  }, [])
+  const handleCookieAccept = useCallback(() => setConsent('accepted'), [])
+  const handleCookieReject = useCallback(() => setConsent('rejected'), [])
 
   const handleTutorialComplete = useCallback(() => {
-    if (localStorage.getItem(COOKIE_KEY) === 'accepted') {
-      localStorage.setItem(TUTORIAL_SEEN_KEY, 'true')
-    }
+    prefs.set(TUTORIAL_SEEN_KEY, 'true')
     setShowTutorial(false)
   }, [])
 
@@ -152,15 +132,16 @@ function AppRoutes() {
         </Routes>
       </AnimatePresence>
 
-      {/* Cookie consent pops on top of everything when undecided */}
-      {cookieConsent === null && user && user.role !== 'dev' && (
+      {/* Aviso de cookies: bloqueia o site para qualquer visitante até a escolha
+          (a sessão de dev nunca guarda nada permanente) */}
+      {cookieConsent === null && user?.role !== 'dev' && (
         <CookieConsent
           onAccept={handleCookieAccept}
           onReject={handleCookieReject}
         />
       )}
 
-      {user && user.role !== 'dev' && showTutorial && (
+      {user && user.role !== 'dev' && showTutorial && cookieConsent !== null && (
         <OnboardingModal onComplete={handleTutorialComplete} />
       )}
     </>

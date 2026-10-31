@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, ChevronLeft, X, FileText, CreditCard, Printer, CheckCircle } from 'lucide-react'
+import { prefs } from '../consent'
 
 const steps = [
   {
@@ -31,7 +32,7 @@ export default function OnboardingModal({ onComplete }: { onComplete: () => void
 
   const handleClose = () => {
     setIsOpen(false)
-    localStorage.setItem('printflow-onboarded', 'true')
+    prefs.set('printflow-onboarded', 'true')
     setTimeout(onComplete, 300)
   }
 

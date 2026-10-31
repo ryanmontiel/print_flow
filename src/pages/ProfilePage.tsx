@@ -2,14 +2,16 @@ import { motion } from 'framer-motion'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useState, useEffect } from 'react'
-import { LogOut, Sun, Moon, Printer, FileText } from 'lucide-react'
+import { LogOut, Sun, Moon, Printer, FileText, Cookie } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { apiSavePrintPreferences } from '../api'
+import { resetConsent, useConsent } from '../consent'
 
 export default function ProfilePage() {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
+  const consent = useConsent()
   const [printColor, setPrintColor] = useState<'color' | 'bw'>('bw')
   const [printDuplex, setPrintDuplex] = useState<'single' | 'duplex'>('single')
 
@@ -97,6 +99,26 @@ export default function ProfilePage() {
               },
             ],
           },
+    {
+      title: 'Privacidade',
+      items: [
+        {
+          icon: Cookie,
+          label: 'Cookies',
+          description: consent === 'accepted'
+            ? 'Aceitos: login lembrado, tema e tutorial ficam salvos neste navegador'
+            : 'Recusados: nada fica salvo depois de fechar o navegador',
+          action: (
+            <button
+              onClick={resetConsent}
+              className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm transition-colors whitespace-nowrap"
+            >
+              Alterar escolha
+            </button>
+          ),
+        },
+      ],
+    },
   ]
 
   return (

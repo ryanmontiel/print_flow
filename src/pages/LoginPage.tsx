@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { apiLogin, apiRegister, apiVerifyEmail, apiResendCode, apiForgotPassword, setToken } from '../api'
+import { useConsent } from '../consent'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Printer, FileText, MailCheck, Check, Lock } from 'lucide-react'
 
@@ -73,6 +74,9 @@ export default function LoginPage() {
   const [notice, setNotice] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
   const [loading, setLoading] = useState(false)
   const [remember, setRemember] = useState(false)
+  // "Lembrar de mim" guarda o login por 30 dias: só com cookies aceitos
+  const podeLembrar = useConsent() === 'accepted'
+  useEffect(() => { if (!podeLembrar) setRemember(false) }, [podeLembrar])
   const [pendingEmail, setPendingEmail] = useState('')
   const [verifyCode, setVerifyCode] = useState('')
   const [senhaValue, setSenhaValue] = useState('')
@@ -470,14 +474,21 @@ export default function LoginPage() {
 
               {mode === 'login' && (
                 <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label
+                    className={`flex items-center gap-2 ${podeLembrar ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                    title={podeLembrar ? undefined : 'Disponível ao aceitar cookies (Perfil → Cookies)'}
+                  >
                     <input
                       type="checkbox"
                       checked={remember}
+                      disabled={!podeLembrar}
                       onChange={e => setRemember(e.target.checked)}
                       className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                     />
-                    <span className="text-sm text-gray-600 dark:text-gray-200">Lembrar de mim</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-200">
+                      Lembrar de mim
+                      {!podeLembrar && <span className="block text-xs text-gray-500 dark:text-gray-400">requer aceitar cookies</span>}
+                    </span>
                   </label>
                   <button
                     type="button"

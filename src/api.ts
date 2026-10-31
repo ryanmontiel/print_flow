@@ -1,3 +1,5 @@
+import { hasConsent } from './consent'
+
 const API = ''
 
 
@@ -15,7 +17,8 @@ export function getToken(): string | null {
 
 export function setToken(token: string, remember: boolean) {
   clearToken()
-  ;(remember ? localStorage : sessionStorage).setItem(TOKEN_KEY, token)
+  // "Lembrar-me" só guarda o login de forma permanente com consentimento
+  ;(remember && hasConsent() ? localStorage : sessionStorage).setItem(TOKEN_KEY, token)
 }
 
 export function clearToken() {

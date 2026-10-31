@@ -127,6 +127,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3">
             <button
               onClick={toggleTheme}
+              aria-label="Alternar tema"
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               title={theme === 'light' ? 'Modo escuro' : 'Modo claro'}
             >

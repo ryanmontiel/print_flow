@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import { getToken, clearToken } from '../api'
+import { hasConsent } from '../consent'
 
 type User = {
   email: string
@@ -45,8 +46,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = (email: string, nome: string, remember: boolean = false, printColor?: 'color' | 'bw', printDuplex?: 'single' | 'duplex', role?: 'dev') => {
     const u = { email, nome, printColor, printDuplex, role }
-    const storage = remember ? localStorage : sessionStorage
-    storage.setItem('printflow-user', JSON.stringify(u))
+    // Mesmo lugar do token; e nunca sobra um usuário antigo no outro armazenamento
+    const persistente = remember && hasConsent()
+    ;(persistente ? sessionStorage : localStorage).removeItem('printflow-user')
+    ;(persistente ? localStorage : sessionStorage).setItem('printflow-user', JSON.stringify(u))
     setUser(u)
   }
 

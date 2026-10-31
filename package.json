@@ -13,6 +13,7 @@
     "start:kiosk": "cd kiosk && node server-kiosk.js",
     "test": "node --test tests/backend/*.test.mjs",
     "test:kiosk": "node --test --test-concurrency=1 tests/kiosk/*.test.mjs",
+    "test:site": "node --test --test-concurrency=1 tests/site/*.test.mjs",
     "test:concorrencia": "PF_SHEET_LATENCY=real node tests/concorrencia/concorrencia.mjs",
     "test:carga": "PF_SHEET_LATENCY=real node tests/carga/carga.mjs",
     "test:producao": "node tests/producao/producao.mjs",

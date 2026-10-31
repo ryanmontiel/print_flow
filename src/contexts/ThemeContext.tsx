@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { prefs } from '../consent'
 
 type Theme = 'light' | 'dark'
 
@@ -14,7 +15,7 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem('printflow-theme')
+    const saved = prefs.get('printflow-theme')
     if (saved === 'dark' || saved === 'light') return saved
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
@@ -26,10 +27,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } else {
       root.classList.remove('dark')
     }
-    localStorage.setItem('printflow-theme', theme)
   }, [theme])
 
-  const toggleTheme = () => setTheme(prev => (prev === 'light' ? 'dark' : 'light'))
+  // Só grava quando a pessoa escolhe o tema (antes gravava ao abrir o site,
+  // mesmo sem consentimento)
+  const toggleTheme = () => setTheme(prev => {
+    const next = prev === 'light' ? 'dark' : 'light'
+    prefs.set('printflow-theme', next)
+    return next
+  })
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
