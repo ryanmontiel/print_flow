@@ -545,20 +545,7 @@ const getPrintCost = (color, duplex, pages) => {
 // ═══════════════════════════════════════════════════════════════════════
 
 // ── Health ───────────────────────────────────────────────────────────
-// TEMPORÁRIO: diagnóstico da configuração do acesso de dev (só formato e impressões
-// digitais curtas; não expõe email, senha nem hash). Remover depois de configurado.
-const impressao = (v) => (v ? crypto.createHash('sha256').update(v).digest('hex').slice(0, 8) : null);
-app.get('/api/health', (_req, res) => res.json({
-  status: 'ok',
-  timestamp: Date.now(),
-  devDiagnostico: {
-    status: devConfigStatus(),
-    emailBruto: { presente: Boolean(process.env.DEV_EMAIL), tamanho: String(process.env.DEV_EMAIL || '').length },
-    hashBruto: { presente: Boolean(process.env.DEV_PASSWORD_HASH), tamanho: String(process.env.DEV_PASSWORD_HASH || '').length },
-    email: impressao(DEV_EMAIL),
-    hash: impressao(DEV_PASSWORD_HASH),
-  },
-}));
+app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: Date.now() }));
 
 // ── Register ─────────────────────────────────────────────────────────
 app.post('/api/register', async (req, res) => {
