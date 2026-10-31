@@ -55,17 +55,19 @@ export default function CookieConsent({ onAccept, onReject }: Props) {
           <div className="flex gap-3 rounded-xl bg-gray-50 dark:bg-gray-900/50 p-4">
             <Lock size={20} className="text-gray-500 dark:text-gray-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-gray-900 dark:text-gray-100">Sempre, porque o site precisa</p>
-              <p className="text-sm text-gray-600 dark:text-gray-300">Sua sessão enquanto o navegador estiver aberto e esta escolha, para não perguntarmos de novo.</p>
+              <p className="font-semibold text-gray-900 dark:text-gray-100">O que guardamos sempre</p>
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                Só o necessário para o site funcionar: manter você conectado enquanto o navegador estiver aberto e lembrar a resposta que você der aqui.
+              </p>
             </div>
           </div>
           <div className="flex gap-3 rounded-xl bg-gray-50 dark:bg-gray-900/50 p-4">
             <Settings2 size={20} className="text-gray-500 dark:text-gray-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-gray-900 dark:text-gray-100">Só se você aceitar</p>
+              <p className="font-semibold text-gray-900 dark:text-gray-100">O que guardamos só se você aceitar</p>
               <p className="text-sm text-gray-600 dark:text-gray-300">
-                Manter você conectado por até 30 dias ("Lembrar de mim"), o tema claro ou escuro e se você já viu o tutorial.
-                Se recusar, nada disso fica salvo depois que você fechar o navegador.
+                Para sua comodidade: continuar conectado por até 30 dias quando marcar "Lembrar de mim", o tema claro ou escuro que você escolher e não mostrar o tutorial de novo.
+                Se recusar, isso é apagado quando você fechar o navegador.
               </p>
             </div>
           </div>
