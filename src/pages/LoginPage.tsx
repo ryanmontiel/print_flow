@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { apiLogin, apiRegister, apiVerifyEmail, apiResendCode, apiForgotPassword, setToken } from '../api'
 import { useConsent } from '../consent'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Printer, FileText, MailCheck, Check, Lock } from 'lucide-react'
+import { Printer, FileText, MailCheck, MailSearch, Check, Lock } from 'lucide-react'
 
 function PasswordChecklist({ password }: { password: string }) {
   const requirements = [
@@ -67,6 +67,22 @@ function PasswordChecklist({ password }: { password: string }) {
 }
 
 type Step = 'credentials' | 'verify'
+
+// Emails automáticos (código de verificação, link de nova senha) às vezes caem no spam
+function SpamHint() {
+  return (
+    <div className="flex gap-3 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-left">
+      <MailSearch size={20} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+      <div className="text-sm">
+        <p className="font-medium text-amber-900 dark:text-amber-200">Não encontrou o email?</p>
+        <p className="text-amber-800 dark:text-amber-300/90">
+          Dê uma olhada nas pastas <strong>Spam</strong> e <strong>Lixo eletrônico</strong>: às vezes nossa mensagem vai parar lá.
+          Se encontrar, marque como "Não é spam" para que os próximos emails cheguem direto na sua caixa de entrada.
+        </p>
+      </div>
+    </div>
+  )
+}
 
 export default function LoginPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
@@ -225,7 +241,6 @@ export default function LoginPage() {
       await apiForgotPassword(forgotEmail.trim().toLowerCase())
       setForgotSent(true)
       setForgotError(null)
-      showNotice('Se o email estiver cadastrado, você receberá o link de recuperação.', 'success')
     } catch (err) {
       showNotice(err instanceof Error ? err.message : 'Falha ao solicitar recuperação', 'error')
     } finally {
@@ -270,11 +285,12 @@ export default function LoginPage() {
       <div className="flex-1 bg-white dark:bg-gray-900 p-8 lg:p-14 flex flex-col justify-center">
         <div className="max-w-sm mx-auto w-full">
           <h2 className="font-heading text-3xl font-bold text-gray-900 dark:text-white mb-1">
-            {step === 'verify' ? 'Verificar email' : mode === 'login' ? 'Acessar' : 'Criar conta'}
+            {step === 'verify' ? 'Verificar email' : forgotMode ? 'Recuperar senha' : mode === 'login' ? 'Acessar' : 'Criar conta'}
           </h2>
           <p className="text-gray-500 dark:text-gray-200 text-sm mb-8">
             {step === 'verify'
               ? `Enviamos um código de 6 dígitos para ${pendingEmail}`
+              : forgotMode ? 'Enviaremos um link para você criar uma nova senha.'
               : mode === 'login' ? 'Entre com seu email e senha.' : 'Preencha os dados para se cadastrar.'}
           </p>
 
@@ -311,6 +327,8 @@ export default function LoginPage() {
                   autoFocus
                 />
               </div>
+
+              <SpamHint />
 
               <button
                 type="submit"
@@ -387,9 +405,12 @@ export default function LoginPage() {
                   </button>
                 </>
               ) : (
-                <div className="px-4 py-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 rounded-lg text-sm text-center">
-                  Se o email existir, você receberá um link para redefinir sua senha. Verifique sua caixa de entrada.
-                </div>
+                <>
+                  <div className="px-4 py-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 rounded-lg text-sm text-center">
+                    Se o email estiver cadastrado, você receberá um link para redefinir sua senha. Verifique sua caixa de entrada.
+                  </div>
+                  <SpamHint />
+                </>
               )}
 
               <button
