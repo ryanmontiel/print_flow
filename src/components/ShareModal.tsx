@@ -1,3 +1,6 @@
+// Janela para compartilhar um documento com outro aluno: campo de email com
+// sugestões (busca no servidor a partir de 3 letras), mensagem opcional e envio.
+// Quem faz o compartilhamento de fato é a função onShare passada pela página.
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Send, User } from 'lucide-react'
@@ -30,6 +33,7 @@ export default function ShareModal({ isOpen, onClose, documentName, onShare }: P
 
   useEffect(() => () => { if (searchTimer.current) clearTimeout(searchTimer.current) }, [])
 
+  // Espera 250 ms sem digitação antes de buscar, para não chamar o servidor a cada tecla
   const handleEmailChange = (value: string) => {
     setTargetEmail(value)
     if (searchTimer.current) clearTimeout(searchTimer.current)

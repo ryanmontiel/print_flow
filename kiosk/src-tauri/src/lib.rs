@@ -1,3 +1,7 @@
+// App desktop do kiosk (Tauri). Ao abrir, inicia o servidor local do kiosk
+// (node server-kiosk.js, empacotado como recurso) como processo filho ("sidecar"),
+// espera a porta 4003 responder e só então mostra a janela com a interface.
+// Ao fechar a janela ou sair do app, encerra o servidor junto.
 use std::net::TcpStream;
 use std::process::{Child, Command};
 use std::sync::Mutex;
@@ -5,10 +9,12 @@ use std::time::{Duration, Instant};
 
 use tauri::Manager;
 
+// Processo do servidor do kiosk (None se ele já estava rodando antes do app abrir)
 struct Sidecar(Mutex<Option<Child>>);
 
 const KIOSK_PORT: u16 = 4003;
 
+// Grava uma linha no log em <pasta temporária>/printflow-kiosk.log (para diagnóstico no PC do kiosk)
 fn log_line(msg: &str) {
   use std::io::Write;
   let path = std::env::temp_dir().join("printflow-kiosk.log");
@@ -21,6 +27,7 @@ fn log_line(msg: &str) {
   }
 }
 
+// No Windows, tira o prefixo \\?\ dos caminhos, que o Node não entende
 fn strip_verbatim(path: std::path::PathBuf) -> std::path::PathBuf {
   let s = path.to_string_lossy();
   match s.strip_prefix(r"\\?\") {
@@ -29,6 +36,7 @@ fn strip_verbatim(path: std::path::PathBuf) -> std::path::PathBuf {
   }
 }
 
+// Tenta conectar na porta a cada 250 ms até conseguir ou estourar o tempo
 fn wait_for_port(port: u16, timeout: Duration) -> bool {
   let start = Instant::now();
   while start.elapsed() < timeout {
@@ -48,6 +56,8 @@ fn kill_sidecar(app: &tauri::AppHandle) {
   }
 }
 
+// Ponto de entrada do app: registra o estado do sidecar, sobe o servidor no setup
+// (pastas de cache e .env vêm dos diretórios do app) e trata o fechamento.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()

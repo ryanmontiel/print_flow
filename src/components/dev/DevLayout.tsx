@@ -1,3 +1,5 @@
+// Moldura das páginas do desenvolvedor: barra no topo com as abas (Métricas e
+// Créditos), botão de tema e saída.
 import { NavLink, useNavigate } from 'react-router-dom'
 import { BarChart3, LogOut, Moon, Sun } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'

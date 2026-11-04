@@ -8,6 +8,7 @@
 // Copiar, colar, recortar, desfazer e selecionar tudo continuam liberados.
 const COM_CTRL = new Set(['p', 's', 'o', 'r', 'f', 'g', 'u', 'j', 'h', 'l', 'n', 't', 'w', 'd', 'e', 'k', '+', '=', '-', '_', '0'])
 
+// Diz se a combinação de teclas deve ser ignorada (exportada para os testes)
 export function deveBloquear(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>) {
   const tecla = e.key.toLowerCase()
   if (/^f([1-9]|1[0-2])$/.test(tecla)) return true                       // F1–F12 (F5, F11, F12...)
@@ -18,6 +19,7 @@ export function deveBloquear(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey
   return false
 }
 
+// Registra os bloqueios na fase de captura, antes de qualquer outro tratador da página
 export function ativarBloqueioTeclado() {
   const bloquear = (e: Event) => { e.preventDefault(); e.stopPropagation() }
   window.addEventListener('keydown', (e) => { if (deveBloquear(e)) bloquear(e) }, { capture: true })

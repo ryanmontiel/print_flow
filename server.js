@@ -1,3 +1,16 @@
+// Backend do PrintFlow (Express). Roda localmente (npm run server) e na Vercel
+// (exportado por api/index.js). Concentra toda a regra de negócio do sistema:
+//   - cadastro, verificação de email, login e recuperação de senha dos alunos;
+//   - sessões por token assinado com HMAC (sem guardar sessão em memória);
+//   - documentos: upload direto para o Cloudflare R2 por URL pré-assinada, cota
+//     de 50 MB por aluno, exclusão e compartilhamento entre alunos;
+//   - créditos: compra via Pix (InfinitePay), webhook e conferência do pagamento;
+//   - impressão: cálculo do preço no servidor, débito dos créditos e histórico
+//     (usado pelo kiosk, que fica no PC ao lado da impressora);
+//   - painel do desenvolvedor: métricas de uso e ajuste manual de créditos.
+// O "banco de dados" é uma tabela do Sheetlabs: cada aluno é um registro, e listas
+// (documentos, transações, histórico...) ficam guardadas como texto JSON em colunas.
+// Também serve o frontend já compilado (pasta dist) quando ela existe.
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -25,6 +38,7 @@ const port = process.env.PORT || 4002;
 app.use(cors());
 app.use(express.json());
 
+// Corpo com JSON malformado vira um 400 legível em vez do erro HTML padrão do Express
 app.use((error, _req, res, next) => {
   if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
     return res.status(400).json({ error: 'JSON inválido' });
@@ -57,6 +71,7 @@ const getBasicAuthHeader = () => {
 
 const FETCH_TIMEOUT = 30000;
 
+// fetch que desiste após 30 s, para uma API externa lenta não travar a requisição do aluno
 const fetchWithTimeout = async (url, options = {}) => {
   const ctrl = new AbortController();
   const tid = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT);
@@ -110,6 +125,8 @@ const buildR2Key = (email, fileName) => {
   return `uploads/${ts}-${uploadTag(email, ts, safeName)}-${safeName}`;
 };
 
+// Confere se a chave tem o formato esperado, não passou de 1 hora e se a tag bate
+// com o email do aluno logado (comparação em tempo constante).
 const verifyUploadKey = (email, key) => {
   const m = /^uploads\/(\d+)-([0-9a-f]{20})-([a-zA-Z0-9._-]+)$/.exec(String(key || ''));
   if (!m) return false;
@@ -143,11 +160,14 @@ const normalizeDocUrl = (doc) => {
 
 const normalizeDocUrls = (docs) => (Array.isArray(docs) ? docs : []).map(normalizeDocUrl);
 
+// Espaço ocupado pelo aluno: só conta os próprios documentos (os recebidos por
+// compartilhamento apontam para o arquivo de quem enviou).
 const getUsedStorageBytes = (docs) =>
   (Array.isArray(docs) ? docs : [])
     .filter(isOwnDoc)
     .reduce((sum, doc) => sum + (Number(doc.size) || 0), 0);
 
+// Extrai a chave do objeto no R2 (uploads/...) a partir da URL pública do documento
 const r2KeyFromUrl = (url) => {
   if (!url || typeof url !== 'string') return null;
   try {
@@ -161,6 +181,7 @@ const r2KeyFromUrl = (url) => {
   }
 };
 
+// Apaga o arquivo do bucket; uma falha só é registrada no log, sem quebrar a rota
 const deleteFromR2 = async (url) => {
   const key = r2KeyFromUrl(url);
   if (!key) return;
@@ -197,6 +218,8 @@ const printCodeToConsole = (email, code) => {
   console.log(`╚══════════════════════════════════════╝\n`);
 };
 
+// Envia o código de 6 dígitos do cadastro. Devolve true/false (se o email saiu),
+// para a rota avisar o aluno quando precisar usar "Reenviar código".
 const sendVerificationEmail = async (email, code) => {
   if (SMTP_USER && SMTP_PASS) {
     try {
@@ -225,6 +248,7 @@ const html = `<div style="font-family:system-ui,-apple-system,sans-serif;padding
   return true;
 };
 
+// Envia o link de redefinição de senha (aponta para /reset-password do frontend)
 const sendPasswordResetEmail = async (email, token) => {
 const frontend = process.env.FRONTEND_URL || '';
   let resetUrl;
@@ -290,6 +314,9 @@ const listAllRecords = async () => {
   return Array.isArray(data) ? data : [];
 };
 
+// Busca o registro do aluno pelo email. Tenta primeiro o filtro da API (?email=);
+// se não achar (ex.: email gravado com maiúsculas), cai na lista completa e compara
+// os emails normalizados.
 const findUserByEmail = async (email) => {
   const norm = normalizeEmail(email);
   if (!norm) return null;
@@ -318,6 +345,7 @@ const createUserRecord = async (fields) => {
   return resp.ok;
 };
 
+// Atualiza só os campos informados (PATCH) do registro; devolve true se gravou
 const updateUserRecord = async (recordId, fields) => {
   if (recordId === undefined || recordId === null) {
     console.error('[updateUserRecord] missing recordId for', fields && fields.email);
@@ -347,6 +375,7 @@ const deleteUserRecord = async (recordId) => {
   return resp.ok;
 };
 
+// As listas do aluno ficam como texto JSON nas colunas; lê com um valor padrão se vier vazio ou quebrado
 const parseJsonField = (value, fallback) => {
   try { return JSON.parse(value || JSON.stringify(fallback)); } catch { return fallback; }
 };
@@ -365,11 +394,14 @@ const parsePrinterPreferences = (value) => {
 
 // ── Auth helper ──────────────────────────────────────────────────────
 
+// Comparação de strings em tempo constante (evita descobrir segredos medindo o tempo de resposta)
 const safeEqual = (a, b) => {
   const ba = Buffer.from(String(a)), bb = Buffer.from(String(b));
   return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
 };
 
+// Confere email e senha e devolve o registro do aluno (ou null).
+// Senhas novas são bcrypt ($2...); as antigas são migradas na hora do login.
 const authenticateUser = async (email, senha) => {
   const user = await findUserByEmail(email);
   if (!user) return null;
@@ -402,6 +434,8 @@ const SESSION_TTL_MS = {
 
 const passwordStamp = (user) => hmac(`pw|${user.senhahash || ''}`).slice(0, 16);
 
+// Formato do token: <dados em base64url>.<HMAC dos dados>. Campos: e = email,
+// x = expira em (ms), p = impressão da senha, r = papel (só no token de dev).
 const signToken = (data) => {
   const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
   return `${payload}.${hmac(`session|${payload}`)}`;
@@ -422,6 +456,8 @@ const readToken = (token) => {
 
 const bearer = (req) => /^Bearer\s+(\S+)$/i.exec(req.get('authorization') || '')?.[1];
 
+// Valida o token de aluno e devolve o registro atual dele. Se a senha mudou depois
+// do login, a impressão no token não bate mais e a sessão cai.
 const verifySessionToken = async (token) => {
   const data = readToken(token);
   // Tokens com papel (r) não são de aluno: não abrem as rotas de aluno
@@ -431,6 +467,8 @@ const verifySessionToken = async (token) => {
   return user;
 };
 
+// Middleware das rotas de aluno: exige "Authorization: Bearer <token>" válido e
+// deixa o registro do aluno em req.user (lido do banco a cada requisição).
 const requireAuth = async (req, res, next) => {
   const token = bearer(req);
   try {
@@ -452,6 +490,7 @@ const requireAuth = async (req, res, next) => {
 const envLimpo = (v) => String(v || '').trim().replace(/^(['"])(.*)\1$/s, '$2').trim();
 const DEV_EMAIL = normalizeEmail(envLimpo(process.env.DEV_EMAIL));
 const DEV_PASSWORD_HASH = envLimpo(process.env.DEV_PASSWORD_HASH);
+// Diz no log da inicialização se o acesso de dev está ativo ou o que falta configurar
 const devConfigStatus = () => {
   if (!DEV_EMAIL && !DEV_PASSWORD_HASH) return 'desativado';
   if (!DEV_EMAIL) return 'falta DEV_EMAIL';
@@ -488,6 +527,8 @@ const devLocked = (ip) => {
   return f.count >= DEV_MAX_FAILURES;
 };
 
+// Login do desenvolvedor (chamado por /api/login quando o email é o DEV_EMAIL).
+// Conta erros por IP, recusa o kiosk e devolve um token com papel "dev" (8 horas).
 const devLogin = async (req, res, senha, client) => {
   const ip = req.ip || 'desconhecido';
   if (devLocked(ip)) return res.status(429).json({ error: 'Muitas tentativas. Aguarde 15 minutos.' });
@@ -888,6 +929,8 @@ app.get('/api/user/print-preferences', requireAuth, async (req, res) => {
 
 // ── Print ────────────────────────────────────────────────────────────
 // O preço é sempre calculado aqui; o "cost" enviado pelo cliente é ignorado.
+// Valida o pedido de impressão (páginas, cor, frente e verso) e calcula o custo.
+// Cor/frente e verso ausentes usam as preferências salvas do aluno.
 const resolvePrint = (user, { pages, color, duplex }) => {
   const prefs = parsePrinterPreferences(user.printerpreferences);
   const printColor = color === 'color' || color === 'bw' ? color : prefs.color;
@@ -911,6 +954,9 @@ app.post('/api/print/quote', requireAuth, async (req, res) => {
   }
 });
 
+// Registra uma impressão (chamado pelo kiosk antes de mandar para a impressora):
+// confere o saldo, desconta os créditos e grava histórico e extrato num único PATCH.
+// O clientRef torna a chamada idempotente: repetir o mesmo pedido não cobra duas vezes.
 app.post('/api/print', requireAuth, async (req, res) => {
   const { documentId, documentName, clientRef } = req.body;
   if (!documentId) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
@@ -978,6 +1024,8 @@ app.get('/api/print-history', requireAuth, async (req, res) => {
 });
 
 // ── Share document ───────────────────────────────────────────────────
+// Não copia o arquivo: o destinatário ganha um documento que aponta para a mesma URL,
+// marcado com compartilhado_de_*, e uma notificação pendente para aceitar ou recusar.
 app.post('/api/share-document', requireAuth, async (req, res) => {
   const { targetEmail, documentId, documentName, message } = req.body;
   if (!targetEmail || !documentId) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
@@ -1039,6 +1087,7 @@ app.post('/api/share-document', requireAuth, async (req, res) => {
 });
 
 // ── Handle share ─────────────────────────────────────────────────────
+// Aceitar só marca a notificação; recusar também tira o documento compartilhado da lista.
 app.post('/api/handle-share', requireAuth, async (req, res) => {
   const { notificationId, action } = req.body;
   if (!notificationId || !action) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
@@ -1091,6 +1140,7 @@ app.get('/api/notifications', requireAuth, async (req, res) => {
 const INFINITE_HANDLE = 'ryan-montiel';
 const INFINITE_API = 'https://api.checkout.infinitepay.io';
 
+// Pagamentos pendentes do aluno: objeto { order_nsu: { email, amount, status, createdAt, ... } }
 const readPendingForUser = (user) => parseJsonField(user.pagamentospendentes, {});
 
 const writePendingForUser = async (user, pending) => {
@@ -1107,6 +1157,7 @@ const writePendingForUser = async (user, pending) => {
   return true;
 };
 
+// O webhook só traz o order_nsu: procura em todos os alunos quem gerou esse pedido
 const findPendingPaymentOwner = async (order_nsu) => {
   const records = await listAllRecords();
   for (const record of records) {
@@ -1137,6 +1188,8 @@ const checkInfinitePay = async (order_nsu, { slug, transaction_nsu } = {}) => {
 // Confirma um pagamento pendente na InfinitePay e credita o aluno uma única vez.
 // Créditos e status do pedido são gravados no mesmo PATCH, a partir de um registro
 // recém-lido, para que webhook e check-payment simultâneos não creditem em dobro.
+// Resultado em status: 'not_found' (pedido não existe), 'unpaid' (ainda não pago),
+// 'already' (já creditado antes) ou 'credited' (creditado agora).
 const confirmPayment = async (ownerEmail, order_nsu, hints = {}) => {
   const user = await findUserByEmail(ownerEmail);
   if (!user) return { status: 'not_found' };
@@ -1181,6 +1234,8 @@ const confirmPayment = async (ownerEmail, order_nsu, hints = {}) => {
   return { status: 'credited', amount: creditAmount };
 };
 
+// Cria um link de pagamento Pix na InfinitePay (R$ 1 a R$ 500) e guarda o pedido
+// como pendente no registro do aluno. O crédito só entra depois, em confirmPayment.
 app.post('/api/create-payment-link', requireAuth, async (req, res) => {
   const { redirect_url } = req.body;
   const amount = round2(Number(req.body.amount));
@@ -1229,6 +1284,7 @@ app.post('/api/create-payment-link', requireAuth, async (req, res) => {
   }
 });
 
+// Chamado pela página de créditos quando o aluno volta do checkout da InfinitePay
 app.post('/api/check-payment', requireAuth, async (req, res) => {
   const { order_nsu, slug, transaction_nsu } = req.body;
   if (!order_nsu) return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
@@ -1245,6 +1301,7 @@ app.post('/api/check-payment', requireAuth, async (req, res) => {
   }
 });
 
+// Tenta de novo confirmar um pedido que ficou pendente (ex.: webhook não chegou)
 app.post('/api/reprocess-payment', requireAuth, async (req, res) => {
   const { order_nsu } = req.body;
   if (!order_nsu) return res.status(400).json({ error: 'Campos obrigatórios' });
@@ -1282,6 +1339,7 @@ app.post('/api/webhook-infinitepay', async (req, res) => {
 });
 
 // ── Métricas (painel do desenvolvedor) ───────────────────────────────
+// Datas das métricas são agrupadas no fuso de Brasília, no formato AAAA-MM-DD
 const METRICS_TZ = 'America/Sao_Paulo';
 const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: METRICS_TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
 const hourFmt = new Intl.DateTimeFormat('en-GB', { timeZone: METRICS_TZ, hour: '2-digit', hourCycle: 'h23' });
@@ -1311,6 +1369,13 @@ const recordsForMetrics = async (fresh) => {
   return metricsSnapshot;
 };
 
+// Calcula todas as métricas do painel de dev num único passe pelos registros.
+// from/to são dias AAAA-MM-DD (from = null significa "desde o início").
+// Totais do período: impressões (por tipo e por hora), créditos comprados via Pix,
+// créditos manuais, ajustes da equipe, links de pagamento e alunos novos/ativos.
+// "situacao" é a foto atual (saldo em contas, documentos, compartilhamentos) e não
+// depende do período. "serie" alimenta os gráficos de barras, com dias sem movimento
+// preenchidos com zero.
 const computeMetrics = (records, from, to) => {
   const inRange = (day) => Boolean(day) && (!from || day >= from) && day <= to;
   const imp = { trabalhos: 0, paginas: 0, receita: 0, alunos: new Set(), porTipo: {}, porHora: Array(24).fill(0) };
@@ -1444,6 +1509,8 @@ const computeMetrics = (records, from, to) => {
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// Query: from (AAAA-MM-DD ou "all"), to (padrão: hoje) e fresh=1 para ignorar o cache.
+// Sem from, mostra os últimos 30 dias.
 app.get('/api/dev/metrics', requireDev, async (req, res) => {
   const hoje = dayKey(new Date().toISOString());
   const todo = req.query.from === 'all';
@@ -1480,6 +1547,8 @@ app.post('/api/dev/users/search', requireDev, async (req, res) => {
   }
 });
 
+// operacao: 'adicionar' ou 'remover' (soma/subtrai o valor) ou 'definir' (o saldo passa
+// a ser o valor). Exige motivo e um requestId gerado pelo painel, que evita ajuste duplo.
 app.post('/api/dev/credits/adjust', requireDev, async (req, res) => {
   const { email, operacao, requestId } = req.body;
   const valor = round2(Number(req.body.valor));
@@ -1570,6 +1639,7 @@ const createResetCode = (user) => {
   return `${payload}.${hmac(`reset|${payload}`).slice(0, 32)}`;
 };
 
+// Confere assinatura, validade e se a senha ainda é a mesma de quando o link foi gerado
 const verifyResetCode = async (code) => {
   const [payload, sig] = String(code || '').split('.');
   if (!payload || !sig || !safeEqual(sig, hmac(`reset|${payload}`).slice(0, 32))) return { error: 'Link invalido' };
@@ -1610,6 +1680,8 @@ app.post('/api/reset-password', async (req, res) => {
 });
 
 // ── Serve built frontend ─────────────────────────────────────────────
+// Fora da Vercel, o próprio Express entrega o site; rotas desconhecidas caem no
+// index.html para o React Router resolver (SPA).
 const __dist = path.join(__dirname, 'dist');
 if (fs.existsSync(__dist)) {
   app.use(express.static(__dist));

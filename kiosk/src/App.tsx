@@ -1,3 +1,6 @@
+// Rotas da interface do kiosk: "/" é o login e "/print" (ou "/print/:docId", com um
+// documento já escolhido) é a tela de impressão. Também define o logout global
+// (window.__kioskLogout) que apaga a sessão do sessionStorage.
 import { Routes, Route } from 'react-router-dom'
 import KioskLoginPage from './pages/KioskLoginPage'
 import KioskPrintPage from './pages/KioskPrintPage'

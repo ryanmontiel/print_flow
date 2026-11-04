@@ -1,3 +1,7 @@
+// Contexto de autenticação do site: guarda quem está logado (email, nome,
+// preferências de impressão e papel "dev") e oferece login/logout para as páginas.
+// Os dados do usuário ficam no mesmo armazenamento do token (ver setToken em api.ts);
+// quem valida a sessão de verdade é o backend.
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import { getToken, clearToken } from '../api'
 import { hasConsent } from '../consent'

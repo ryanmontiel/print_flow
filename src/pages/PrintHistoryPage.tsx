@@ -1,3 +1,5 @@
+// Página "Histórico de impressões": lista as impressões do aluno (mais recentes
+// primeiro) com documento, páginas, configuração, custo e data.
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Printer, CheckCircle, XCircle, FileText } from 'lucide-react'

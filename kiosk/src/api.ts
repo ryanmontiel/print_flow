@@ -1,3 +1,6 @@
+// Cliente HTTP da interface do kiosk. Todas as chamadas vão para o servidor local do
+// kiosk (mesma origem), que imprime pelo CUPS ou repassa ao servidor principal.
+// Também reúne tipos, tabela de preços e formatações usadas nas telas.
 const API = ''
 
 type ApiOptions = {
@@ -6,6 +9,8 @@ type ApiOptions = {
   params?: Record<string, string>
 }
 
+// Faz a requisição com o token da sessão e limite de 60 s. Resposta de erro vira
+// exceção com a mensagem do servidor; sessão expirada desloga e volta ao login.
 async function request<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
   const { method = 'GET', body, params } = options
   let url = `${API}${endpoint}`
@@ -49,6 +54,7 @@ async function request<T>(endpoint: string, options: ApiOptions = {}): Promise<T
   return res.json()
 }
 
+// Fica no sessionStorage: some quando o app do kiosk é fechado
 export const TOKEN_KEY = 'pf-kiosk-token'
 
 export function getToken(): string | null {
@@ -84,6 +90,7 @@ export type PrintConfig = {
   duplex: 'single' | 'duplex'
 }
 
+// Mesma tabela do server.js; aqui serve só para mostrar o valor na tela (quem cobra é o servidor)
 export const PRINT_PRICES: Record<`${PrintConfig['color']}_${PrintConfig['duplex']}`, number> = {
   bw_single: 0.5,
   bw_duplex: 0.35,

@@ -1,3 +1,11 @@
+// Servidor local do kiosk (roda no PC ao lado da impressora, iniciado pelo app Tauri).
+// Faz três coisas:
+//   1. serve a interface do kiosk já compilada (pasta dist);
+//   2. repassa as chamadas /api e /uploads para o servidor principal (Vercel),
+//      guardando os arquivos baixados num cache local;
+//   3. imprime de verdade: baixa o documento, envia ao CUPS com `lp`, acompanha o
+//      trabalho na fila e só debita os créditos do aluno quando a impressora termina.
+// Escuta só em 127.0.0.1 por padrão, então não fica acessível pela rede.
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -43,6 +51,7 @@ const fetchWithTimeout = async (url, options = {}, ms = 15000) => {
 
 const bearerToken = (req) => /^Bearer\s+(\S+)$/i.exec(req.get('authorization') || '')?.[1] || '';
 
+// POST no servidor principal com o token do aluno; erro HTTP vira exceção com status e code
 const postMain = async (endpoint, body, token) => {
   const response = await fetchWithTimeout(`${MAIN_SERVER}${endpoint}`, {
     method: 'POST',
@@ -60,6 +69,7 @@ const postMain = async (endpoint, body, token) => {
 };
 
 // ── Warm-up & keep-alive ──────────────────────────────────────────────
+// Chama o servidor principal a cada 5 minutos para ele não "dormir" (cold start da Vercel)
 
 async function pingMainServer() {
   try {
@@ -93,12 +103,16 @@ const countRanges = (ranges) =>
     return sum + Math.max(0, b - a + 1);
   }, 0);
 
+// Roda um comando (lp, lpstat) sem shell e sempre resolve, com o erro no resultado
 const runFile = (cmd, args) =>
   new Promise((resolve) => {
     execFile(cmd, args, (error, stdout, stderr) => resolve({ error, stdout: stdout || '', stderr: stderr || '' }));
   });
 
 // Estado de um job no CUPS: 'queued' (ainda na fila), 'completed' (impresso) ou 'failed'
+// Primeiro procura o job na fila ativa (lpstat -o). Se não está lá, lê a lista de
+// concluídos em modo detalhado (-l), separa o bloco de linhas desse job e vê se o
+// CUPS marcou "job-completed-successfully"; qualquer outro fim conta como falha.
 const cupsJobState = async (jobId) => {
   const active = await runFile('lpstat', ['-o', CUPS_PRINTER]);
   if (active.error) return 'unknown';
@@ -117,6 +131,8 @@ const cupsJobState = async (jobId) => {
 };
 
 // Debita os créditos no servidor principal. clientRef torna o débito idempotente.
+// Tenta até 5 vezes, esperando mais a cada vez, só para erros de rede/5xx; um erro
+// 4xx (ex.: sessão expirada, sem saldo) não adianta repetir e é lançado na hora.
 const debitJob = async (job) => {
   for (let attempt = 1; attempt <= 5; attempt++) {
     try {
@@ -139,6 +155,8 @@ const debitJob = async (job) => {
 };
 
 // Acompanha o job até o fim e debita sozinho, mesmo que a tela tenha saído.
+// A cada 3 s consulta o CUPS; status do job: printing -> debiting -> completed,
+// ou error. job.checking evita duas consultas sobrepostas se o lpstat demorar.
 const watchJob = (job) => {
   const timer = setInterval(async () => {
     if (job.checking) return;
@@ -198,6 +216,8 @@ const reservedFor = (owner) => {
 
 // Um pedido de impressão por vez para cada aluno (dois cliques seguidos não
 // passam juntos pela conferência de saldo)
+// Funciona como uma fila por aluno: cada chamada encadeia uma promessa na anterior
+// e só roda fn depois que a anterior liberou.
 const startLocks = new Map();
 const withUserLock = async (key, fn) => {
   const previous = startLocks.get(key) || Promise.resolve();
@@ -213,7 +233,11 @@ const withUserLock = async (key, fn) => {
   }
 };
 
-// Start print job: confere saldo, envia ao CUPS e passa a acompanhar o job
+// Start print job: confere saldo, envia ao CUPS e passa a acompanhar o job.
+// Passos: calcula as páginas cobradas (cópias x intervalo), pede o orçamento ao
+// servidor principal descontando o que já está reservado na fila, baixa o arquivo
+// para uma pasta temporária e chama `lp` com cor, frente e verso, cópias e páginas.
+// Nada é debitado aqui: quem debita é o watchJob, quando a impressora termina.
 app.post('/api/print/start', async (req, res) => {
   const { fileUrl, color, duplex, documentId, documentName, pages, copies, pageRanges } = req.body;
   const token = bearerToken(req);
@@ -318,6 +342,7 @@ app.post('/api/print/complete', (req, res) => {
 });
 
 // ── Proxy /uploads with local cache ──────────────────────────────────
+// Arquivos antigos guardados no servidor principal: baixa uma vez e serve do disco depois
 app.all('/uploads/*', async (req, res) => {
   const cacheKey = req.originalUrl.replace(/\//g, '_').replace(/[^a-zA-Z0-9._-]/g, '');
   const cachePath = path.join(CACHE_DIR, cacheKey);

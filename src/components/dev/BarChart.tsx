@@ -1,3 +1,6 @@
+// Gráfico de barras em SVG feito à mão, usado no painel de métricas do dev.
+// Aceita uma ou mais séries (barras lado a lado por ponto), se ajusta à largura do
+// container, mostra o valor ao passar o mouse e tem a opção de ver os dados em tabela.
 import { useEffect, useRef, useState } from 'react'
 
 export type Serie = { nome: string; cor: string }
@@ -28,6 +31,7 @@ function barra(x: number, y: number, w: number, h: number) {
   return `M${x},${y + h} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h} Z`
 }
 
+// Largura atual do container (mínimo 260px), atualizada quando a tela muda de tamanho
 function useLargura() {
   const ref = useRef<HTMLDivElement>(null)
   const [largura, setLargura] = useState(600)
@@ -45,6 +49,8 @@ export default function BarChart({ titulo, series, pontos, formatar, altura = 22
   const [ativo, setAtivo] = useState<number | null>(null)
   const [verTabela, setVerTabela] = useState(false)
 
+  // Geometria: w/h é a área útil (sem margens), cada ponto ocupa um "grupo" de largura
+  // igual, e y() converte um valor em altura no SVG (0 fica na base do eixo)
   const max = tetoBonito(Math.max(0, ...pontos.flatMap((p) => p.valores)))
   const temDados = pontos.some((p) => p.valores.some((v) => v > 0))
   const w = largura - MARGEM.esquerda - MARGEM.direita

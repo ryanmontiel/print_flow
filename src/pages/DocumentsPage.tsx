@@ -1,3 +1,6 @@
+// Página "Documentos": envio de arquivos (até 10 MB cada, 50 MB no total), barra de
+// espaço usado, busca, e lista dos próprios documentos e dos recebidos por
+// compartilhamento, com abrir, baixar, compartilhar e excluir.
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, Search, Trash2, ExternalLink, Download, Share2, FileText, Loader2, HardDrive } from 'lucide-react'
@@ -39,6 +42,8 @@ const loadDocuments = async () => {
     }
   }
 
+  // Confere os limites antes de enviar, sobe o arquivo para o R2 e abre o campo para
+  // dar nome ao documento (sugere o nome do arquivo sem a extensão)
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -66,6 +71,7 @@ const loadDocuments = async () => {
     }
   }
 
+  // Registra no backend o arquivo já enviado, com o nome escolhido
   const handleSaveDocument = async () => {
     if (!namingDoc || !docName.trim()) return
     try {

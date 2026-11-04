@@ -1,3 +1,5 @@
+// Moldura das páginas do aluno: menu lateral (vira gaveta no celular), barra do
+// topo com tema, sino de notificações e menu do perfil, e a área do conteúdo.
 import { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -33,6 +35,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
 
+  // Contador de notificações pendentes no menu: atualiza a cada 30 s e quando outra
+  // página dispara o evento pf-notifications-updated
   useEffect(() => {
     const loadNotifications = async () => {
       try {

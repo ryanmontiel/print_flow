@@ -1,3 +1,6 @@
+// Rotas do site dos alunos. Páginas de aluno ficam dentro do Layout (menu lateral)
+// e exigem login; /dev e /dev/creditos são só para a credencial de desenvolvedor.
+// Também decide quando mostrar o aviso de cookies e o tutorial de boas-vindas.
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { useAuth } from './contexts/AuthContext'
@@ -20,6 +23,7 @@ import { prefs, setConsent, useConsent } from './consent'
 const TUTORIAL_SEEN_KEY = 'pf-tutorial-seen'
 const NEW_REG_KEY = 'pf-new-reg'
 
+// Página de aluno: sem login vai para /login; o dev é mandado para o painel dele
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth()
 
@@ -54,6 +58,7 @@ function AppRoutes() {
   const cookieConsent = useConsent()
   const [showTutorial, setShowTutorial] = useState(false)
 
+  // Mostra o tutorial logo após o cadastro ou para quem ainda não o viu
   useEffect(() => {
     if (!user || user.role === 'dev') return
     if (sessionStorage.getItem(NEW_REG_KEY) === 'true') {

@@ -1,3 +1,5 @@
+// Contexto do tema claro/escuro: começa pela escolha salva (ou pelo tema do sistema)
+// e liga/desliga a classe "dark" no <html>, que o Tailwind usa para as cores.
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { prefs } from '../consent'
 

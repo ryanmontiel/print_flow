@@ -1,3 +1,5 @@
+// Tutorial de boas-vindas em 4 passos (documentos, créditos, impressão), mostrado
+// no primeiro acesso. Ao fechar, marca como visto e avisa o App por onComplete.
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, ChevronLeft, X, FileText, CreditCard, Printer, CheckCircle } from 'lucide-react'

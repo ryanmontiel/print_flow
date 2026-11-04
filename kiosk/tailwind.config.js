@@ -1,3 +1,4 @@
+// Configuração do Tailwind da interface do kiosk (mesma paleta e fontes do site).
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],

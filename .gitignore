@@ -1,3 +1,4 @@
+# Arquivos que o git não deve versionar (logs, dependências, builds, segredos).
 # Logs
 logs
 *.log

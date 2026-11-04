@@ -1,3 +1,6 @@
+// Pré-visualização rápida de um documento ao passar o mouse sobre ele (lista de
+// documentos). Depois de "delay" ms mostra um balão com a imagem ou o PDF; no PDF,
+// avança uma página a cada 2 s. Outros formatos mostram só um ícone.
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FileText, File, Image } from 'lucide-react'

@@ -1,9 +1,12 @@
+// Página aberta pelo link do email de recuperação (/reset-password?code=...): o aluno
+// digita a nova senha duas vezes e o código assinado do link é enviado ao backend.
 import { FormEvent, useEffect, useState } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import { apiResetPassword } from '../api'
 import { motion } from 'framer-motion'
 import { Check, Lock } from 'lucide-react'
 
+// Lista dos requisitos da senha, marcando em tempo real os que já foram cumpridos
 function PasswordChecklist({ password }: { password: string }) {
   const requirements = [
     { label: '8 caracteres ou mais', met: password.length >= 8 },

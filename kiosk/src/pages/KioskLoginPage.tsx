@@ -1,3 +1,6 @@
+// Tela de login do kiosk. O aluno entra com o mesmo email e senha do site; a sessão
+// (token de 2 horas, pedido com client: 'kiosk') fica no sessionStorage. Ao abrir,
+// já chama /api/health para "acordar" o servidor principal enquanto o aluno digita.
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Printer, Loader2 } from 'lucide-react'

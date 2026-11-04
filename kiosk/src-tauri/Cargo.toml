@@ -1,3 +1,4 @@
+# Pacote Rust do app desktop do kiosk (Tauri 2): versão do app e dependências.
 [package]
 name = "printflow"
 version = "0.1.1"

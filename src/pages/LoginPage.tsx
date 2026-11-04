@@ -1,3 +1,8 @@
+// Página de entrada do site, com três fluxos na mesma tela:
+//   - login (aluno vai para /home; a credencial de dev vai para /dev);
+//   - cadastro -> etapa "verify", onde o aluno digita o código recebido por email
+//     e já entra logado;
+//   - "Esqueci minha senha", que pede o envio do link de redefinição.
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -6,6 +11,7 @@ import { useConsent } from '../consent'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Printer, FileText, MailCheck, MailSearch, Check, Lock } from 'lucide-react'
 
+// Lista dos requisitos da senha, marcando em tempo real os que já foram cumpridos
 function PasswordChecklist({ password }: { password: string }) {
   const requirements = [
     { label: '8 caracteres ou mais', met: password.length >= 8 },
@@ -120,6 +126,7 @@ export default function LoginPage() {
     }
   }, [])
 
+  // Bloqueia o "Reenviar código" por 60 s, com contagem regressiva no botão
   const startResendCooldown = () => {
     setResendCooldown(60)
     if (cooldownRef.current) window.clearInterval(cooldownRef.current)
@@ -142,6 +149,9 @@ export default function LoginPage() {
     }
   }
 
+  // Envio do formulário principal. No cadastro, valida na tela as mesmas regras do
+  // servidor (email institucional, senha forte, confirmação) antes de criar a conta.
+  // No login, guarda o token e o usuário e redireciona conforme o papel.
   const handleSubmitCredentials = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const form = e.currentTarget

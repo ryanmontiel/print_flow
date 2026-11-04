@@ -1,3 +1,5 @@
+// Página de notificações: lista os pedidos de compartilhamento recebidos e permite
+// aceitar ou recusar cada um (recusar remove o documento da lista do aluno).
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Bell, CheckCircle, XCircle, Send, FileText, Loader2 } from 'lucide-react'
@@ -24,6 +26,7 @@ export default function NotificationsPage() {
     }
   }
 
+  // Responde o pedido, atualiza a lista na tela e avisa o Layout para recontar as pendentes
   const handleAction = async (notif: Notification, action: 'accepted' | 'rejected') => {
     setHandlingId(notif.id)
     try {

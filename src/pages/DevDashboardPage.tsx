@@ -1,3 +1,6 @@
+// Painel de métricas do desenvolvedor: escolhe o período (atalhos ou datas
+// personalizadas), busca /api/dev/metrics e mostra números-resumo, gráficos de
+// receita, páginas e horários, e a situação atual das contas.
 import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { apiDevMetrics, formatBRL, formatBytes, type DevMetrics } from '../api'
@@ -31,6 +34,7 @@ const PRESETS: { id: Preset; label: string }[] = [
   { id: 'custom', label: 'Personalizado' },
 ]
 
+// Converte o atalho de período escolhido em datas from/to (AAAA-MM-DD, fuso de Brasília)
 function intervalo(p: Preset, custom: { from: string; to: string }) {
   const h = hoje()
   switch (p) {
@@ -94,6 +98,7 @@ export default function DevDashboardPage() {
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState('')
 
+  // Busca as métricas do período; fresh = true (botão atualizar) ignora o cache de 60 s do servidor
   const carregar = useCallback(async (fresh = false) => {
     const { from, to } = intervalo(preset, custom)
     if (from !== 'all' && from > to) { setErro('A data inicial é depois da final.'); return }

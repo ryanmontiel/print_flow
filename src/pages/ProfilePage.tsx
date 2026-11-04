@@ -1,3 +1,6 @@
+// Página de perfil: dados do aluno, tema claro/escuro, preferências padrão de
+// impressão (cor e frente e verso, salvas no servidor e usadas pelo kiosk), escolha
+// de cookies (pode ser alterada) e botão de sair.
 import { motion } from 'framer-motion'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'

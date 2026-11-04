@@ -1,3 +1,4 @@
+// Ponto de entrada do site: monta o React em #root com os contextos de tema e de login.
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'

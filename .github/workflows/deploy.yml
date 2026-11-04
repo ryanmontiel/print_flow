@@ -1,3 +1,5 @@
+# Publica o site na Vercel a cada push na main e aponta o domínio
+# tcc-printflow.vercel.app para o novo deploy (tenta até 10 vezes enquanto ele fica pronto).
 name: Deploy to Vercel
 
 on:

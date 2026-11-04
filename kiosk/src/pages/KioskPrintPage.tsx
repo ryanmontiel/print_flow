@@ -1,3 +1,9 @@
+// Tela principal do kiosk, em etapas (step):
+//   select    -> lista os documentos do aluno;
+//   simulate  -> pré-visualiza, escolhe páginas, cópias, cor e frente e verso e mostra o custo;
+//   printing  -> envia ao servidor do kiosk e consulta o status a cada 3 s;
+//   done/error -> resultado da impressão.
+// Encerra a sessão sozinha por inatividade, com aviso nos últimos 20 segundos.
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
@@ -90,6 +96,8 @@ export default function KioskPrintPage() {
     }
   }, [canDuplex, config.duplex])
 
+  // Carrega documentos, saldo e preferências de impressão de uma vez e já começa a
+  // baixar os arquivos em segundo plano, para a pré-visualização abrir mais rápido
   const loadData = async () => {
     setLoading(true)
     setError('')
@@ -158,6 +166,7 @@ export default function KioskPrintPage() {
     }
   }
 
+  // Pergunta ao servidor do kiosk, a cada 3 s, se a impressora já terminou o trabalho
   const startPolling = (jobId: string) => {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
     
@@ -217,6 +226,8 @@ export default function KioskPrintPage() {
   const logoutRef = useRef(handleLogout)
   logoutRef.current = handleLogout
 
+  // Contador de inatividade: qualquer toque/tecla zera; depois de 2 min (30 s na tela
+  // de concluído) faz logout. Recomeça a cada troca de etapa.
   useEffect(() => {
     // Não desloga no meio de uma impressão
     if (step === 'printing') { setIdleSecondsLeft(null); return }

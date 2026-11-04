@@ -1,3 +1,6 @@
+// Página de créditos do aluno: mostra o saldo e o extrato e permite comprar
+// créditos por Pix. Ao escolher um valor, o aluno vai para o checkout da InfinitePay;
+// ao voltar (com ?order_nsu=... na URL), a página confirma o pagamento no backend.
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
@@ -23,6 +26,8 @@ export default function CreditsPage() {
   useEffect(() => { loadCredits() }, [])
 
   // Handle redirect back from InfinitePay
+  // Confere o pagamento; se ainda não constar como pago, tenta mais uma vez após 3 s.
+  // No fim limpa os parâmetros da URL, para recarregar a página não conferir de novo.
   useEffect(() => {
     const order_nsu = searchParams.get('order_nsu')
     if (!order_nsu) return
@@ -70,6 +75,7 @@ export default function CreditsPage() {
     }
   }
 
+  // Cria o link de pagamento e redireciona para o checkout da InfinitePay
   const handleBuy = async (amount: number) => {
     setProcessingPayment(true)
     setError('')

@@ -1,3 +1,6 @@
+// Aviso de cookies (LGPD) que cobre o site até o visitante escolher "Aceitar" ou
+// "Recusar". Trava a rolagem e mantém o foco do teclado dentro da janela. A escolha
+// é gravada por quem usa o componente (App.tsx, via consent.ts).
 import { useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Cookie, Check, X, Lock, Settings2 } from 'lucide-react'

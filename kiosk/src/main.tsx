@@ -1,3 +1,5 @@
+// Ponto de entrada da interface do kiosk: liga o bloqueio de atalhos de teclado e
+// monta o React com o roteador.
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'

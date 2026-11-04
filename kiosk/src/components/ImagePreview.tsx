@@ -1,3 +1,5 @@
+// Pré-visualização de imagem na tela de impressão do kiosk, com indicador de
+// carregamento e botão "Tentar novamente" se a imagem não abrir.
 import { useState, useCallback } from 'react'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 
@@ -8,6 +10,7 @@ type Props = {
 
 export default function ImagePreview({ src, alt }: Props) {
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading')
+  // Mudar a key recria o <img>, forçando o navegador a baixar de novo
   const [retryKey, setRetryKey] = useState(0)
 
   const handleLoad = useCallback(() => setStatus('loaded'), [])

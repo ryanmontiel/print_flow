@@ -1,3 +1,6 @@
+// Pré-visualização de PDF no kiosk (pdf.js): mostra a página atual em tamanho grande
+// e miniaturas de todas as páginas, que o aluno toca para escolher quais imprimir.
+// A seleção fica com o componente pai (KioskPrintPage), que calcula o preço.
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { CheckSquare, Square, RefreshCw, AlertCircle } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -24,6 +27,7 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
   const [previewPage, setPreviewPage] = useState(1)
   const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null)
   const renderSeqRef = useRef(0)
+  // Abre o PDF, informa o total de páginas ao pai e começa com todas selecionadas
   const loadPdf = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -59,6 +63,7 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
     }
   }, [pdfDoc, previewPage])
 
+  // Desenha a página no canvas principal, em alta resolução (devicePixelRatio)
   const renderPage = async (num: number) => {
     if (!pdfDoc || !canvasRef.current) return
     // Só o desenho mais recente pode pintar no canvas: um desenho antigo terminando
@@ -92,6 +97,7 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
     }
   }
 
+  // Marca/desmarca a página para impressão e já mostra ela em destaque
   const togglePage = (n: number) => {
     const next = new Set(selectedPages)
     if (next.has(n)) next.delete(n)
@@ -203,6 +209,7 @@ export default function PdfPreview({ url, selectedPages, onSelectionChange, onPa
   )
 }
 
+// Miniatura de uma página; cancela o desenho se o componente sair da tela antes de terminar
 function PdfThumbnail({ page, pageNum, scale }: { page: pdfjsLib.PDFDocumentProxy; pageNum: number; scale: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 

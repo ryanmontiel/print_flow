@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-
 // Consentimento de cookies/armazenamento no navegador (LGPD).
+// Este arquivo guarda a escolha do visitante, move/apaga os dados opcionais conforme
+// a escolha e oferece "prefs" para as outras partes do site salvarem preferências.
 //
 // O PrintFlow não usa cookies de publicidade nem de rastreamento. O que guarda no
 // navegador se divide em:
@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react'
 // - opcional (só com "Aceitar"): login lembrado por 30 dias, tema claro/escuro e
 //   tutorial já visto. Sem consentimento, esses itens ficam só no sessionStorage
 //   e somem ao fechar o navegador.
+import { useEffect, useState } from 'react'
 
 export const CONSENT_KEY = 'pf-cookie-consent'
 export const CONSENT_EVENT = 'pf-consent-changed'

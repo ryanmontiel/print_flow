@@ -1,3 +1,6 @@
+// Página inicial do aluno: cartões com total de documentos, saldo e impressões,
+// últimas movimentações de créditos, atalhos e uma janela rápida para compartilhar
+// um documento sem sair da página.
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
@@ -27,6 +30,8 @@ export default function HomePage() {
     loadData()
   }, [])
 
+  // Busca tudo em paralelo; allSettled deixa a página mostrar o que carregou mesmo
+  // se uma das chamadas falhar. Guarda só as 3 transações mais recentes.
   const loadData = async () => {
     setLoading(true)
     setError('')
@@ -65,6 +70,7 @@ export default function HomePage() {
     } catch {}
   }
 
+  // Sugestões de destinatário: busca no servidor 250 ms depois de parar de digitar
   const handleShareEmailChange = (value: string) => {
     setShareEmail(value)
     if (shareSearchTimer.current) clearTimeout(shareSearchTimer.current)

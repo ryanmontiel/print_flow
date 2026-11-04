@@ -1,3 +1,6 @@
+// Página do desenvolvedor para ajustar créditos de um aluno: busca o aluno,
+// escolhe a operação (adicionar, remover ou definir o saldo), informa valor e motivo,
+// revisa o resultado e confirma. Abaixo, mostra o histórico de todos os ajustes.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Search } from 'lucide-react'
 import { apiDevAdjustCredits, apiDevAdjustments, apiDevSearchUsers, formatBRL, type DevAjuste, type DevAluno } from '../api'
@@ -51,6 +54,9 @@ export default function DevCreditsPage() {
     setValorTexto(''); setMotivo(''); setRevisao(null); setErro(''); setSucesso('')
   }
 
+  // Prévia calculada na tela (o servidor recalcula sobre o saldo atual): valor aceita
+  // vírgula, "definir" permite zero, e só dá para revisar se o saldo novo for válido,
+  // diferente do atual e houver motivo de 5 a 200 caracteres
   const valor = round2(Number(valorTexto.replace(',', '.')))
   const valorOk = Number.isFinite(valor) && valor <= MAX && (operacao === 'definir' ? valor >= 0 && valorTexto.trim() !== '' : valor > 0)
   const saldoNovo = aluno && valorOk
@@ -59,6 +65,7 @@ export default function DevCreditsPage() {
   const motivoOk = motivo.trim().length >= 5 && motivo.trim().length <= 200
   const podeRevisar = Boolean(aluno && valorOk && saldoNovo !== null && saldoNovo >= 0 && saldoNovo !== aluno.creditos && motivoOk)
 
+  // Envia o ajuste revisado e atualiza o saldo mostrado e o histórico
   const confirmar = async () => {
     if (!aluno || !revisao || enviando) return
     setEnviando(true); setErro('')

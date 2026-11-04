@@ -1,3 +1,5 @@
+// Configuração do Tailwind do site dos alunos: onde procurar as classes usadas,
+// modo escuro pela classe "dark" no <html> e a paleta/fontes do PrintFlow.
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
