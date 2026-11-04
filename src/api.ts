@@ -1,3 +1,7 @@
+// Cliente HTTP do site dos alunos: uma função por rota do backend (server.js),
+// com os tipos das respostas. Também guarda o token da sessão (sessionStorage, ou
+// localStorage com "Lembrar-me" e consentimento) e reúne preços, limites e
+// formatações (R$, MB, títulos) usados nas páginas.
 import { hasConsent } from './consent'
 
 const API = ''
@@ -29,6 +33,9 @@ export function clearToken() {
   }
 }
 
+// Base de todas as chamadas: envia o token, desiste após 60 s e transforma resposta
+// de erro em exceção com a mensagem do servidor. Se a sessão expirou, limpa o login
+// salvo e manda para /login.
 async function request<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
   const { method = 'GET', body, params } = options
   let url = `${API}${endpoint}`
@@ -140,11 +147,12 @@ export type PrintConfig = {
   duplex: 'single' | 'duplex'
 }
 
+// Preço por página, igual ao server.js (quem cobra de fato é o servidor)
 export const PRINT_PRICES: Record<`${PrintConfig['color']}_${PrintConfig['duplex']}`, number> = {
   bw_single: 0.5,
-  bw_duplex: 1.0,
+  bw_duplex: 0.35,
   color_single: 0.75,
-  color_duplex: 1.5,
+  color_duplex: 0.6,
 }
 
 export const getPrintPrice = (config: PrintConfig) => PRINT_PRICES[`${config.color}_${config.duplex}`]
@@ -213,7 +221,9 @@ export const apiGetDocuments = () => {
   })
 }
 
-// Envia o arquivo direto para o R2 via URL pré-assinada (contorna o limite de 4.5MB da Vercel)
+// Envia o arquivo direto para o R2 via URL pré-assinada (contorna o limite de 4.5MB da Vercel).
+// Etapas: 1) pede ao backend a URL de envio (/api/upload/presign), 2) faz o PUT do
+// arquivo no R2. Depois a página chama apiAddDocument para registrar o documento.
 export const apiUploadFile = async (file: File) => {
 
   if (file.size > PER_FILE_LIMIT_BYTES) {

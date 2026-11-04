@@ -4,17 +4,17 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const { default: bcrypt } = await import(path.join(ROOT, 'node_modules/bcryptjs/index.js'));
+const { default: bcrypt } = await import(pathToFileURL(path.join(ROOT, 'node_modules/bcryptjs/index.js')).href);
 
 const DEV_EMAIL = 'dev@printflow.test';
 const DEV_SENHA = 'Painel-Dev#2026!';
 process.env.DEV_EMAIL = DEV_EMAIL;
 process.env.DEV_PASSWORD_HASH = await bcrypt.hash(DEV_SENHA, 4);
 
-const { addUser, api, login, APP_SECRET, close } = await import('../helpers/backend.mjs');
+const { addUser, api, login, db, APP_SECRET, close } = await import('../helpers/backend.mjs');
 after(close);
 
 const hmac = (d) => crypto.createHmac('sha256', APP_SECRET).update(d).digest('hex');
@@ -24,9 +24,10 @@ const metrics = (token, q = '') => api(`/api/dev/metrics${q}`, { method: 'GET', 
 
 // ── Dados conhecidos para conferir as métricas ───────────────────────
 const iso = (s) => new Date(s).toISOString();
-await addUser({
+const ULTIMO_LOGIN_ANA = iso('2026-10-20T09:00:00-03:00');
+const ana = await addUser({
   email: 'ana@academico.ifsul.edu.br', nome: 'Ana', senha: 'Senha@123', creditos: '12.5',
-  criadoem: iso('2026-10-02T13:00:00-03:00'), ultimologinem: iso('2026-10-20T09:00:00-03:00'),
+  criadoem: iso('2026-10-02T13:00:00-03:00'), ultimologinem: ULTIMO_LOGIN_ANA,
   historicoimpressao: JSON.stringify([
     { pages: 10, cost: 5, color: 'bw', duplex: 'single', printedAt: iso('2026-10-10T08:15:00-03:00') },
     { pages: 4, cost: 2.4, color: 'color', duplex: 'duplex', printedAt: iso('2026-10-10T14:40:00-03:00') },
@@ -104,6 +105,9 @@ test('senha de dev errada responde igual a uma conta inexistente', async () => {
 
 // ── Métricas ─────────────────────────────────────────────────────────
 test('métricas de outubro batem com os dados (fuso de Brasília)', async () => {
+  // Os testes anteriores fazem login com a Ana, o que grava a data de hoje em
+  // ultimologinem; volta ao valor conhecido para o resultado não depender do dia
+  db.get(ana.__id).ultimologinem = ULTIMO_LOGIN_ANA;
   const { token } = await devLogin();
   const r = await metrics(token, '?from=2026-10-01&to=2026-10-31&fresh=1');
   assert.equal(r.status, 200);

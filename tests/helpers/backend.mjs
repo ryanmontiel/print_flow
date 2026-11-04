@@ -6,10 +6,11 @@
 //   PF_SHEET_CAP     = número            máximo de requisições simultâneas ao Sheetlabs
 //   PF_BCRYPT_COST   = número            custo do bcrypt dos usuários criados (padrão 4)
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const mod = (p) => path.join(ROOT, 'node_modules', p);
+// import() precisa de URL file://: no Windows, um caminho "C:\..." é lido como protocolo "c:"
+const mod = (p) => pathToFileURL(path.join(ROOT, 'node_modules', p)).href;
 
 const { default: bcrypt } = await import(mod('bcryptjs/index.js'));
 
@@ -145,7 +146,7 @@ const { default: nodemailer } = await import(mod('nodemailer/dist/esm/nodemailer
 nodemailer.createTransport = () => ({ sendMail: async (m) => { sentEmails.push(m); return {}; } });
 
 // ── Sobe o servidor ──────────────────────────────────────────────────
-const { default: app } = await import(path.join(ROOT, 'server.js'));
+const { default: app } = await import(pathToFileURL(path.join(ROOT, 'server.js')).href);
 const server = app.listen(0, '127.0.0.1');
 await new Promise((r) => server.once('listening', r));
 server.keepAliveTimeout = 60000;

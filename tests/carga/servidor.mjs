@@ -4,10 +4,10 @@
 // Uso: PF_SHEET_LATENCY=real node tests/carga/servidor.mjs <alunos> <arquivo-de-métricas>
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const { default: bcrypt } = await import(path.join(ROOT, 'node_modules/bcryptjs/index.js'));
+const { default: bcrypt } = await import(pathToFileURL(path.join(ROOT, 'node_modules/bcryptjs/index.js')).href);
 
 // Os logs do servidor não interessam aqui
 console.log = () => {};
