@@ -199,3 +199,43 @@ test('botão Sair apaga a sessão e não dá para voltar sem login', async () =>
   await page.waitForFunction(() => location.pathname === '/', { timeout: 10000 });
   await page.close();
 });
+
+test('atalhos bloqueados na tela do kiosk; digitar e colar continuam funcionando', async () => {
+  const page = await abrir();
+  const resultado = await page.evaluate(() => {
+    const tenta = (init) => {
+      const e = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+      document.querySelector('input[placeholder="seu@email.com"]').dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    document.body.dispatchEvent(menu);
+    return {
+      bloqueados: {
+        'Ctrl+P': tenta({ key: 'p', ctrlKey: true }),
+        'Ctrl+S': tenta({ key: 's', ctrlKey: true }),
+        'Ctrl+R': tenta({ key: 'r', ctrlKey: true }),
+        F5: tenta({ key: 'F5' }),
+        F11: tenta({ key: 'F11' }),
+        F12: tenta({ key: 'F12' }),
+        'Ctrl+Shift+I': tenta({ key: 'I', ctrlKey: true, shiftKey: true }),
+        'Ctrl++ (zoom)': tenta({ key: '+', ctrlKey: true }),
+        'Alt+← (voltar)': tenta({ key: 'ArrowLeft', altKey: true }),
+        'clique direito': menu.defaultPrevented,
+      },
+      liberados: {
+        'letra a': tenta({ key: 'a' }),
+        'Ctrl+V (colar)': tenta({ key: 'v', ctrlKey: true }),
+        'Ctrl+C (copiar)': tenta({ key: 'c', ctrlKey: true }),
+        'Ctrl+A (selecionar)': tenta({ key: 'a', ctrlKey: true }),
+        Backspace: tenta({ key: 'Backspace' }),
+      },
+    };
+  });
+  for (const [atalho, bloqueado] of Object.entries(resultado.bloqueados)) assert.equal(bloqueado, true, `${atalho} deveria ser bloqueado`);
+  for (const [tecla, bloqueado] of Object.entries(resultado.liberados)) assert.equal(bloqueado, false, `${tecla} deveria funcionar`);
+  // Digitação de verdade no campo
+  await page.locator('input[placeholder="seu@email.com"]').fill('aluno@academico.ifsul.edu.br');
+  assert.equal(await page.$eval('input[placeholder="seu@email.com"]', (i) => i.value), 'aluno@academico.ifsul.edu.br');
+  await page.close();
+});
