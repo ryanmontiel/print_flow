@@ -574,7 +574,7 @@ const getUnitPrice = (color, duplex) => {
 };
 const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 const formatValor = (v) => `R$ ${Number(v).toFixed(2).replace('.', ',')}`;
-// "single" = preço por página; "duplex" = preço por folha (2 páginas por folha).
+// Custo = páginas x preço por página (frente e verso tem preço por página menor).
 const getPrintCost = (color, duplex, pages) => {
   const price = getUnitPrice(color, duplex);
   const n = Number(pages) || 1;
@@ -954,7 +954,7 @@ app.post('/api/print/quote', requireAuth, async (req, res) => {
   }
 });
 
-// Registra uma impressão (chamado pelo kiosk antes de mandar para a impressora):
+// Registra uma impressão (chamado pelo kiosk depois que a impressora termina):
 // confere o saldo, desconta os créditos e grava histórico e extrato num único PATCH.
 // O clientRef torna a chamada idempotente: repetir o mesmo pedido não cobra duas vezes.
 app.post('/api/print', requireAuth, async (req, res) => {
