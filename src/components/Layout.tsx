@@ -9,6 +9,7 @@ import {
   Home,
   FileText,
   CreditCard,
+  Calculator,
   History,
   Bell,
   LogOut,
@@ -23,6 +24,7 @@ const navItems = [
   { to: '/home', icon: Home, label: 'Início' },
   { to: '/documents', icon: FileText, label: 'Documentos' },
   { to: '/credits', icon: CreditCard, label: 'Créditos' },
+  { to: '/simulator', icon: Calculator, label: 'Simular impressão' },
   { to: '/print-history', icon: History, label: 'Histórico' },
   { to: '/notifications', icon: Bell, label: 'Notificações' },
 ]

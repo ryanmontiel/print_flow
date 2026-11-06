@@ -10,6 +10,7 @@ import HomePage from './pages/HomePage'
 import DocumentsPage from './pages/DocumentsPage'
 import CreditsPage from './pages/CreditsPage'
 import PrintHistoryPage from './pages/PrintHistoryPage'
+import SimulatorPage from './pages/SimulatorPage'
 import ProfilePage from './pages/ProfilePage'
 import NotificationsPage from './pages/NotificationsPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
@@ -112,6 +113,10 @@ function AppRoutes() {
           <Route
             path="/credits"
             element={<ProtectedRoute><CreditsPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/simulator"
+            element={<ProtectedRoute><SimulatorPage /></ProtectedRoute>}
           />
           <Route
             path="/print-history"

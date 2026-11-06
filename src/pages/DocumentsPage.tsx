@@ -2,8 +2,9 @@
 // espaço usado, busca, e lista dos próprios documentos e dos recebidos por
 // compartilhamento, com abrir, baixar, compartilhar e excluir.
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, Search, Trash2, ExternalLink, Download, Share2, FileText, Loader2, HardDrive } from 'lucide-react'
+import { Upload, Search, Trash2, ExternalLink, Download, Share2, FileText, Loader2, HardDrive, Calculator } from 'lucide-react'
 import { apiGetDocuments, apiUploadFile, apiAddDocument, apiDeleteDocument, apiShareDocument, isOwnDocument, documentDisplayName, truncateTitle, formatBytes, STORAGE_LIMIT_BYTES, PER_FILE_LIMIT_BYTES, type StoredDocument } from '../api'
 import ShareModal from '../components/ShareModal'
 import DocumentPreview from '../components/DocumentPreview'
@@ -144,6 +145,11 @@ const loadDocuments = async () => {
             title="Baixar">
             <Download size={16} />
           </a>
+          <Link to={`/simulator?doc=${encodeURIComponent(doc.id)}`}
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-200 hover:text-primary-500 transition-colors"
+            title="Simular custo da impressão">
+            <Calculator size={16} />
+          </Link>
           {!isShared && (
             <button
               onClick={() => setShareDoc(doc)}

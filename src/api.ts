@@ -157,6 +157,10 @@ export const PRINT_PRICES: Record<`${PrintConfig['color']}_${PrintConfig['duplex
 
 export const getPrintPrice = (config: PrintConfig) => PRINT_PRICES[`${config.color}_${config.duplex}`]
 
+// Mesma conta do kiosk e do servidor: páginas impressas (já com as cópias) x preço por página
+export const getPrintCost = (config: PrintConfig, pages: number) =>
+  Math.round(pages * getPrintPrice(config) * 100) / 100
+
 export const printConfigLabel = (c?: { color?: string; duplex?: string }) => {
   const color = c?.color === 'color' ? 'Colorido' : 'Preto e branco'
   const duplex = c?.duplex === 'duplex' ? 'Frente e verso' : 'Simples'
